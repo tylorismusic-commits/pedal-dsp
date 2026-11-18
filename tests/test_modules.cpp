@@ -158,6 +158,58 @@ int main() {
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; bf.process(l,r); x[i]=l; }
     check(finite(x), "Bass Fuzz stays finite");
   }
+  {
+    stomp::modules::PitchDrop pitch;
+    pitch.prepare(kSr);
+    stomp::modules::PitchDropControls c;
+    c.pitch = 0.75f;  // +12 semitones
+    c.mode = 0;
+    c.glide = 0.0f;
+    c.mix = 1.0f;
+    pitch.setControls(c);
+    int crossings = 0;
+    float prev = 0.0f;
+    for (int i = 0; i < kN; ++i) {
+      float l = 0.2f * std::sin(2.0f * 3.14159265f * 220.0f * i / kSr);
+      float r = l;
+      pitch.process(l, r);
+      if (i > 4800) {
+        if ((prev <= 0.0f && l > 0.0f) || (prev >= 0.0f && l < 0.0f)) {
+          ++crossings;
+        }
+        prev = l;
+      }
+    }
+    const double hz = crossings * 0.5 / ((kN - 4800) / double(kSr));
+    check(std::fabs(hz - 440.0) < 25.0, "Pitch Drop shifts +12 semitones");
+    check(pitch.latencySamples() > 0, "Pitch Drop reports latency");
+  }
+  {
+    stomp::modules::Retune retune;
+    retune.prepare(kSr);
+    stomp::modules::RetuneControls c;
+    c.semitones = 1.0f;  // +12
+    c.cents = 0.5f;
+    c.lowCut = 0.0f;
+    c.mix = 1.0f;
+    retune.setControls(c);
+    int crossings = 0;
+    float prev = 0.0f;
+    for (int i = 0; i < kN; ++i) {
+      float l = 0.2f * std::sin(2.0f * 3.14159265f * 220.0f * i / kSr);
+      float r = l;
+      retune.process(l, r);
+      if (i > 4800) {
+        if ((prev <= 0.0f && l > 0.0f) || (prev >= 0.0f && l < 0.0f)) {
+          ++crossings;
+        }
+        prev = l;
+      }
+    }
+    const double hz = crossings * 0.5 / ((kN - 4800) / double(kSr));
+    std::printf("DBG retune hz %.2f\n", hz);
+    check(std::fabs(hz - 440.0) < 25.0, "Retune shifts +12 semitones");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);
