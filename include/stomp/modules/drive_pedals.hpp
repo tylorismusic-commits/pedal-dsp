@@ -440,4 +440,183 @@ private:
   Channel ch_[2];
 };
 
-} // namespace stomp::modules
+
+// Tone Bender-style silicon fuzz.
+struct ToneBenderControls {
+  float attack = 0.6f;
+  float tone = 0.5f;
+  float level = 0.5f;
+};
+class ToneBender {
+public:
+  void prepare(float sr) noexcept {
+    sr_ = sr > 0.0f ? sr : 48000.0f;
+    reset();
+    dirty_ = true;
+  }
+  void setControls(const ToneBenderControls& c) noexcept {
+    c_ = c;
+    dirty_ = true;
+  }
+  inline void process(float& l, float& r) noexcept {
+    update();
+    l = processCh(ch_[0], l);
+    r = processCh(ch_[1], r);
+  }
+  void reset() noexcept { for (auto& ch : ch_) ch.reset(); }
+  int latencySamples() const noexcept { return 0; }
+private:
+  struct Channel {
+    hdsp::Biquad hpf, tone, mid;
+    AdaaTanh clip1, clip2;
+    void reset() noexcept {
+      hpf.reset(); tone.reset(); mid.reset(); clip1.reset(); clip2.reset();
+    }
+  };
+  void update() noexcept {
+    if (!dirty_) return;
+    dirty_ = false;
+    gain_ = detail::dbToGain(5.0f + 32.0f * detail::clamp01(c_.attack));
+    level_ = detail::dbToGain(-14.0f + 18.0f * detail::clamp01(c_.level));
+    const float f = 1200.0f * std::pow(7.0f, detail::clamp01(c_.tone));
+    for (auto& ch : ch_) {
+      ch.hpf.highPass(60.0f, 0.7f, sr_);
+      ch.tone.lowPass(f, 0.72f, sr_);
+      ch.mid.peak(1200.0f, 3.0f, 0.8f, sr_);
+    }
+  }
+  inline float processCh(Channel& ch, float x) noexcept {
+    x = ch.hpf.process(x);
+    x = ch.clip1.process(x * gain_);
+    x = ch.clip2.process(x * 1.8f);
+    x = ch.mid.process(x);
+    return ch.tone.process(x) * level_;
+  }
+  float sr_ = 48000.0f;
+  bool dirty_ = true;
+  ToneBenderControls c_;
+  float gain_ = 1.0f, level_ = 1.0f;
+  Channel ch_[2];
+};
+
+// Bass overdrive with a preserved clean low band.
+struct BassDriveControls {
+  float drive = 0.45f;
+  float blend = 0.8f;
+  float tone = 0.5f;
+  float level = 0.5f;
+};
+class BassDrive {
+public:
+  void prepare(float sr) noexcept {
+    sr_ = sr > 0.0f ? sr : 48000.0f;
+    reset();
+    dirty_ = true;
+  }
+  void setControls(const BassDriveControls& c) noexcept {
+    c_ = c;
+    dirty_ = true;
+  }
+  inline void process(float& l, float& r) noexcept {
+    update();
+    l = processCh(ch_[0], l);
+    r = processCh(ch_[1], r);
+  }
+  void reset() noexcept { for (auto& ch : ch_) ch.reset(); }
+  int latencySamples() const noexcept { return 0; }
+private:
+  struct Channel {
+    hdsp::Biquad lowSplit, highSplit, tone;
+    AdaaTanh clip;
+    void reset() noexcept { lowSplit.reset(); highSplit.reset(); tone.reset(); clip.reset(); }
+  };
+  void update() noexcept {
+    if (!dirty_) return;
+    dirty_ = false;
+    gain_ = detail::dbToGain(4.0f + 28.0f * detail::clamp01(c_.drive));
+    level_ = detail::dbToGain(-12.0f + 18.0f * detail::clamp01(c_.level));
+    blend_ = detail::clamp01(c_.blend);
+    const float f = 1000.0f * std::pow(7.0f, detail::clamp01(c_.tone));
+    for (auto& ch : ch_) {
+      ch.lowSplit.lowPass(150.0f, 0.7f, sr_);
+      ch.highSplit.highPass(150.0f, 0.7f, sr_);
+      ch.tone.lowPass(f, 0.7f, sr_);
+    }
+  }
+  inline float processCh(Channel& ch, float x) noexcept {
+    const float low = ch.lowSplit.process(x);
+    const float high = ch.highSplit.process(x);
+    const float wet = ch.tone.process(ch.clip.process(high * gain_));
+    return (low + high * (1.0f - blend_) + wet * blend_) * level_;
+  }
+  float sr_ = 48000.0f;
+  bool dirty_ = true;
+  BassDriveControls c_;
+  float gain_ = 1.0f, level_ = 1.0f, blend_ = 0.8f;
+  Channel ch_[2];
+};
+
+// Bass fuzz with a preserved clean low band.
+struct BassFuzzControls {
+  float fuzz = 0.6f;
+  float blend = 0.8f;
+  float tone = 0.5f;
+  float level = 0.5f;
+};
+class BassFuzz {
+public:
+  void prepare(float sr) noexcept {
+    sr_ = sr > 0.0f ? sr : 48000.0f;
+    reset();
+    dirty_ = true;
+  }
+  void setControls(const BassFuzzControls& c) noexcept {
+    c_ = c;
+    dirty_ = true;
+  }
+  inline void process(float& l, float& r) noexcept {
+    update();
+    l = processCh(ch_[0], l);
+    r = processCh(ch_[1], r);
+  }
+  void reset() noexcept { for (auto& ch : ch_) ch.reset(); }
+  int latencySamples() const noexcept { return 0; }
+private:
+  struct Channel {
+    hdsp::Biquad lowSplit, highSplit, tone;
+    AdaaTanh clip1, clip2;
+    void reset() noexcept {
+      lowSplit.reset(); highSplit.reset(); tone.reset();
+      clip1.reset(); clip2.reset();
+    }
+  };
+  void update() noexcept {
+    if (!dirty_) return;
+    dirty_ = false;
+    gain_ = detail::dbToGain(8.0f + 30.0f * detail::clamp01(c_.fuzz));
+    level_ = detail::dbToGain(-14.0f + 18.0f * detail::clamp01(c_.level));
+    blend_ = detail::clamp01(c_.blend);
+    const float f = 900.0f * std::pow(6.0f, detail::clamp01(c_.tone));
+    for (auto& ch : ch_) {
+      ch.lowSplit.lowPass(120.0f, 0.7f, sr_);
+      ch.highSplit.highPass(120.0f, 0.7f, sr_);
+      ch.tone.lowPass(f, 0.7f, sr_);
+    }
+  }
+  inline float processCh(Channel& ch, float x) noexcept {
+    const float low = ch.lowSplit.process(x);
+    const float high = ch.highSplit.process(x);
+    float wet = ch.clip1.process(high * gain_);
+    wet = ch.clip2.process(wet * 2.0f);
+    wet = ch.tone.process(wet);
+    return (low + high * (1.0f - blend_) + wet * blend_) * level_;
+  }
+  float sr_ = 48000.0f;
+  bool dirty_ = true;
+  BassFuzzControls c_;
+  float gain_ = 1.0f, level_ = 1.0f, blend_ = 0.8f;
+  Channel ch_[2];
+};
+
+}
+

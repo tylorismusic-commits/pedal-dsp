@@ -131,6 +131,33 @@ int main() {
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; fuzz.process(l,r); x[i]=l; }
     check(finite(x), "Fuzz Face stays finite");
   }
+  {
+    stomp::modules::ToneBender bender;
+    bender.prepare(kSr);
+    stomp::modules::ToneBenderControls c;
+    bender.setControls(c);
+    auto x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; bender.process(l,r); x[i]=l; }
+    check(finite(x), "Tone Bender stays finite");
+  }
+  {
+    stomp::modules::BassDrive bd;
+    bd.prepare(kSr);
+    stomp::modules::BassDriveControls c;
+    bd.setControls(c);
+    auto x = tone(80.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; bd.process(l,r); x[i]=l; }
+    check(finite(x), "Bass Drive stays finite");
+  }
+  {
+    stomp::modules::BassFuzz bf;
+    bf.prepare(kSr);
+    stomp::modules::BassFuzzControls c;
+    bf.setControls(c);
+    auto x = tone(80.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; bf.process(l,r); x[i]=l; }
+    check(finite(x), "Bass Fuzz stays finite");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);
