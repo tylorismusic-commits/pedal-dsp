@@ -326,6 +326,85 @@ int main() {
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; rr.process(l,r); x[i]=l; }
     check(finite(x), "Room Reverb stays finite");
   }
+  {
+    stomp::modules::FetComp fet;
+    fet.prepare(kSr);
+    stomp::modules::FetCompControls fc;
+    fc.input = 1.0f;
+    fet.setControls(fc);
+    auto x = tone(220.0f, 0.4f);
+    double before = 0.0, after = 0.0;
+    for (int i = 0; i < kN; ++i) {
+      float l=x[i], r=x[i]; fet.process(l,r);
+      if (i > kN / 2) { before += double(x[i]) * x[i]; after += double(l) * l; }
+      x[i]=l;
+    }
+    check(finite(x), "FET Comp stays finite");
+    check(after < before, "FET Comp reduces level");
+    stomp::modules::OptoComp opto;
+    opto.prepare(kSr);
+    stomp::modules::OptoCompControls oc;
+    oc.peak = 0.9f;
+    opto.setControls(oc);
+    x = tone(220.0f, 0.4f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; opto.process(l,r); x[i]=l; }
+    check(finite(x), "Opto Comp stays finite");
+    stomp::modules::EnvFilter wah;
+    wah.prepare(kSr);
+    stomp::modules::EnvFilterControls wc;
+    wah.setControls(wc);
+    x = tone(220.0f, 0.4f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; wah.process(l,r); x[i]=l; }
+    check(finite(x), "Envelope Filter stays finite");
+    stomp::modules::NoiseGate gate;
+    gate.prepare(kSr);
+    stomp::modules::GatePedalControls gc;
+    gc.threshold = 0.9f;
+    gate.setControls(gc);
+    x = tone(220.0f, 0.4f);
+    double gIn = 0.0, gOut = 0.0;
+    for (int i = 0; i < kN; ++i) {
+      float l=x[i], r=x[i]; gate.process(l,r);
+      if (i > kN / 2) { gIn += double(x[i]) * x[i]; gOut += double(l) * l; }
+      x[i]=l;
+    }
+    check(finite(x), "Noise Gate stays finite");
+    check(gOut < gIn * 0.5, "Noise Gate closes");
+    stomp::modules::TightGate tight;
+    tight.prepare(kSr);
+    tight.setControls(gc);
+    x = tone(220.0f, 0.4f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; tight.process(l,r); x[i]=l; }
+    check(finite(x), "Tight Gate stays finite");
+    stomp::modules::Eq3 eq;
+    eq.prepare(kSr, 120.0f, 800.0f, 4000.0f);
+    stomp::modules::Eq3Controls ec;
+    ec.low = 0.9f;
+    eq.setControls(ec);
+    x = tone(80.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; eq.process(l,r); x[i]=l; }
+    check(finite(x), "3-Band EQ stays finite");
+    stomp::modules::BassEq beq;
+    beq.prepare(kSr);
+    beq.setControls(ec);
+    x = tone(80.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; beq.process(l,r); x[i]=l; }
+    check(finite(x), "Bass EQ stays finite");
+    stomp::modules::LoFi lofi;
+    lofi.prepare(kSr);
+    stomp::modules::LoFiControls lc;
+    lofi.setControls(lc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; lofi.process(l,r); x[i]=l; }
+    check(finite(x), "Lo-Fi stays finite");
+    stomp::modules::TapeSat tape;
+    tape.prepare(kSr);
+    stomp::modules::TapeSatControls tc;
+    tape.setControls(tc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; tape.process(l,r); x[i]=l; }
+    check(finite(x), "Tape Sat stays finite");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);
