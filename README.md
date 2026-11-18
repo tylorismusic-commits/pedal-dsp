@@ -15,3 +15,6 @@ ctest --test-dir build --output-on-failure
 ```
 
 GPL-3.0-or-later. See `THIRD_PARTY_NOTICES.md`.
+
+
+Dependencies: Rubber Band, FFTW3F and hearth-dsp.
