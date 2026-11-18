@@ -318,6 +318,19 @@ void NamAmpPedal::setControls(const NamAmpControls& c) noexcept {
 bool NamAmpPedal::loadModel(const std::string& path) noexcept {
   const bool ok = impl_->model.load(path);
   impl_->resetBuffers();
+  if (ok && impl_->model.loaded()) {
+    // Run a few blocks of silence so the model and the DC blocker settle
+    // before the pedal is heard.
+    std::fill(impl_->mono.begin(), impl_->mono.end(), 0.0f);
+    for (int block = 0; block < 8; ++block) {
+      impl_->model.process(impl_->mono.data(), Impl::kBlock);
+      for (int i = 0; i < Impl::kBlock; ++i) {
+        impl_->dc.process(impl_->treble.process(
+            impl_->mid.process(impl_->bass.process(impl_->mono[i]))));
+      }
+    }
+    impl_->resetBuffers();
+  }
   return ok;
 }
 void NamAmpPedal::clearModel() noexcept {
