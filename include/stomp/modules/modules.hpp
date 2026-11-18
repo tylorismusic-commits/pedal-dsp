@@ -7,3 +7,4 @@
 #include "drive_pedals.hpp"
 #include "pitch.hpp"
 #include "modulation.hpp"
+#include "delay_pedals.hpp"

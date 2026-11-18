@@ -249,6 +249,22 @@ int main() {
     check(finite(x), "Tremolo stays finite");
     check(wetSum < drySum * 0.9, "Tremolo modulates level");
   }
+  {
+    stomp::modules::AnalogDelay delay;
+    delay.prepare(kSr);
+    stomp::modules::AnalogDelayControls c;
+    delay.setControls(c);
+    auto x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; delay.process(l,r); x[i]=l; }
+    check(finite(x), "Analog Delay stays finite");
+    stomp::modules::SpringReverb reverb;
+    reverb.prepare(kSr);
+    stomp::modules::SpringReverbControls rc;
+    reverb.setControls(rc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; reverb.process(l,r); x[i]=l; }
+    check(finite(x), "Spring Reverb stays finite");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);
