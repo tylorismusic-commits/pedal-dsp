@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <vector>
 
 #include <stomp/modules/modules.hpp>
@@ -672,6 +674,7 @@ int main() {
     auto x = tone(220.0f, 0.3f);
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; cab.process(l,r); x[i]=l; }
     check(finite(x), "Cab stays finite");
+    check(cab.latencySamples() == 256, "Cab reports one block of latency");
     check(rms(x, 4800, kN) > 0.01, "Cab passes audio");
     cab.setIR(nullptr, 0);
     x = tone(220.0f, 0.3f);
@@ -726,6 +729,37 @@ int main() {
     }
     check(rms(quiet, 24000, 48000) < 1.0e-5,
           "NAM gate mutes the model noise floor");
+
+    {
+      namespace fs = std::filesystem;
+      const fs::path dir = fs::temp_directory_path() / "pedal-nam-test";
+      std::error_code ec;
+      fs::remove_all(dir, ec);
+      fs::create_directories(dir, ec);
+      const fs::path malformed = dir / "bad.nam";
+      {
+        std::ofstream out(malformed);
+        out << "this is not a NAM model";
+      }
+      stomp::modules::NamAmpPedal broken;
+      broken.prepare(kSr);
+      check(!broken.loadModel(malformed.string()),
+            "malformed NAM model is rejected");
+      float bl = 0.1f, br = 0.1f;
+      broken.process(bl, br);
+      check(std::isfinite(bl), "malformed NAM passes safely");
+      const fs::path huge = dir / "huge.nam";
+      {
+        std::ofstream out(huge);
+        out << "{}";
+      }
+      fs::resize_file(huge, 40u * 1024u * 1024u, ec);
+      stomp::modules::NamAmpPedal oversized;
+      oversized.prepare(kSr);
+      check(!oversized.loadModel(huge.string()),
+            "oversized NAM model is rejected");
+      fs::remove_all(dir, ec);
+    }
 
     stomp::modules::NamAmpPedal bad;
     bad.prepare(kSr);
