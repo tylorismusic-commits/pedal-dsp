@@ -37,7 +37,7 @@ private:
 };
 
 struct PitchDropControls {
-  float pitch = 0.5f;   // -24..+24 semitones
+  float pitch = 0.0f;   // mode-dependent pitch control
   int mode = 0;         // 0 up, 1 down, 2 drop, 3 harmony, 4 detune
   float glide = 0.2f;
   float tone = 0.5f;
@@ -68,13 +68,14 @@ private:
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
-    float semis = -24.0f + 48.0f * pitchdetail::clamp01(c_.pitch);
+    const float v = pitchdetail::clamp01(c_.pitch);
+    float semis = 0.0f;
     switch (std::clamp(c_.mode, 0, 4)) {
-      case 0: semis = std::max(0.0f, semis); break;          // Whammy Up
-      case 1: semis = std::min(0.0f, semis); break;          // Whammy Down
-      case 2: semis = -std::fabs(std::round(semis)); break;  // Drop
-      case 3: semis = semis + 7.0f; break;                   // Harmony
-      default: semis = 0.12f; break;                         // Detune
+      case 0: semis = 24.0f * v; break;                   // Whammy Up
+      case 1: semis = -24.0f * v; break;                  // Whammy Down
+      case 2: semis = -std::round(24.0f * v); break;      // Drop
+      case 3: semis = std::round(-24.0f + 48.0f * v) + 7.0f; break; // Harmony
+      default: semis = 0.02f + 0.28f * v; break;          // Detune (cents)
     }
     engine_.setRatio(std::pow(2.0f, semis / 12.0f),
                      0.01f + 0.5f * pitchdetail::clamp01(c_.glide));

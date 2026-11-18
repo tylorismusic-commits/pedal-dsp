@@ -45,17 +45,24 @@ public:
     env_ += (detector - env_) * envCoeff;
 
     const float overDb = hdsp::gainToDb(env_) - kThresholdDb;
+    const float slope = 1.0f - 1.0f / ratio_;
     float gainDb = 0.0f;
-    if (overDb > 0.0f) {
-      gainDb = -overDb * (1.0f - 1.0f / ratio_);
+    constexpr float kKneeDb = 6.0f;
+    if (overDb > kKneeDb * 0.5f) {
+      gainDb = -overDb * slope;
+    } else if (overDb > -kKneeDb * 0.5f) {
+      const float x = overDb + kKneeDb * 0.5f;
+      gainDb = -slope * x * x / (2.0f * kKneeDb);
     }
     const float gain = hdsp::dbToGain(gainDb + outputDb_);
+    grDb_ = -gainDb;
     l *= gain;
     r *= gain;
     if (!std::isfinite(env_)) env_ = 0.0f;
   }
-  void reset() noexcept { env_ = 0.0f; }
+  void reset() noexcept { env_ = 0.0f; grDb_ = 0.0f; }
   int latencySamples() const noexcept { return 0; }
+  float gainReductionDb() const noexcept { return grDb_; }
 
 private:
   static constexpr float kThresholdDb = -18.0f;
@@ -81,6 +88,7 @@ private:
   float attackCoeff_ = 0.1f;
   float releaseCoeff_ = 0.01f;
   float outputDb_ = 0.0f;
+  float grDb_ = 0.0f;
 };
 
 // Optical compressor pedal with a fixed gentle ratio.
@@ -116,13 +124,15 @@ public:
       gainDb = -overDb * (1.0f - 1.0f / kRatio);
     }
     const float gain = hdsp::dbToGain(gainDb + gainDb_) * driveComp_;
+    grDb_ = -gainDb;
     const float wetL = l * gain;
     const float wetR = r * gain;
     l += (wetL - l) * mix_;
     r += (wetR - r) * mix_;
   }
-  void reset() noexcept { env_ = 0.0f; }
+  void reset() noexcept { env_ = 0.0f; grDb_ = 0.0f; }
   int latencySamples() const noexcept { return 0; }
+  float gainReductionDb() const noexcept { return grDb_; }
 
 private:
   static constexpr float kThresholdDb = -24.0f;
@@ -136,6 +146,7 @@ private:
   float mix_ = 1.0f;
   float attackCoeff_ = 0.1f;
   float releaseCoeff_ = 0.01f;
+  float grDb_ = 0.0f;
 };
 
 // Envelope-controlled band-pass auto-wah.
@@ -236,6 +247,8 @@ class GatePedal {
 public:
   void prepare(float sr) noexcept {
     sr_ = sr > 0.0f ? sr : 48000.0f;
+    envAttack_ = dyndetail::coeffForMs(0.2f, sr_);
+    envRelease_ = dyndetail::coeffForMs(20.0f, sr_);
     reset();
   }
   void setControls(const GatePedalControls& c, bool tight) noexcept {
@@ -256,8 +269,12 @@ public:
     const float shared = std::max(detL, detR);
     const float useL = shared * link_ + detL * (1.0f - link_);
     const float useR = shared * link_ + detR * (1.0f - link_);
-    const float targetL = useL > thresholdGain_ ? 1.0f : resetGain_;
-    const float targetR = useR > thresholdGain_ ? 1.0f : resetGain_;
+    env_[0] += (useL - env_[0]) *
+               (useL > env_[0] ? envAttack_ : envRelease_);
+    env_[1] += (useR - env_[1]) *
+               (useR > env_[1] ? envAttack_ : envRelease_);
+    const float targetL = env_[0] > thresholdGain_ ? 1.0f : resetGain_;
+    const float targetR = env_[1] > thresholdGain_ ? 1.0f : resetGain_;
     gain_[0] += (targetL - gain_[0]) *
                 (targetL > gain_[0] ? openCoeff_ : closeCoeff_);
     gain_[1] += (targetR - gain_[1]) *
@@ -267,11 +284,18 @@ public:
   }
   void reset() noexcept {
     gain_[0] = gain_[1] = 1.0f;
+    env_[0] = env_[1] = 0.0f;
   }
   int latencySamples() const noexcept { return 0; }
+  float gainReductionDb() const noexcept {
+    return -hdsp::gainToDb(std::min(gain_[0], gain_[1]));
+  }
 
 private:
   float sr_ = 48000.0f;
+  float env_[2] = {0.0f, 0.0f};
+  float envAttack_ = 0.1f;
+  float envRelease_ = 0.001f;
   float thresholdGain_ = 0.01f;
   float resetGain_ = 0.001f;
   float openCoeff_ = 0.5f;
@@ -289,6 +313,7 @@ public:
   inline void process(float& l, float& r) noexcept { core_.process(l, r); }
   void reset() noexcept { core_.reset(); }
   int latencySamples() const noexcept { return 0; }
+  float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
 private:
   GatePedal core_;
@@ -303,6 +328,7 @@ public:
   inline void process(float& l, float& r) noexcept { core_.process(l, r); }
   void reset() noexcept { core_.reset(); }
   int latencySamples() const noexcept { return 0; }
+  float gainReductionDb() const noexcept { return core_.gainReductionDb(); }
 
 private:
   GatePedal core_;

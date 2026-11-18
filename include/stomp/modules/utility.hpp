@@ -61,7 +61,7 @@ private:
     if (!dirty_) return;
     dirty_ = false;
     const float lowDb = (utildetail::clamp01(c_.low) - 0.5f) * 30.0f;
-    const float midDb = (utildetail::clamp01(c_.mid) - 0.5f) * 24.0f;
+    const float midDb = (utildetail::clamp01(c_.mid) - 0.5f) * 30.0f;
     const float highDb = (utildetail::clamp01(c_.high) - 0.5f) * 30.0f;
     low_.lowShelf(lowHz_, lowDb, 0.7f, sr_);
     mid_.peak(midHz_, midDb, 0.8f, sr_);

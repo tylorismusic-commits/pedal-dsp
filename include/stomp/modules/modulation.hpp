@@ -378,7 +378,7 @@ private:
     rateHz_ = modulationdetail::lfoRate(c_.rate);
     depthMs_ = 0.5f + 6.0f * modulationdetail::clamp01(c_.depth);
     mix_ = modulationdetail::clamp01(c_.mix);
-    const float hz = 60.0f * std::pow(12.0f, modulationdetail::clamp01(c_.lowCut));
+    const float hz = 40.0f + 260.0f * modulationdetail::clamp01(c_.lowCut);
     lp_[0].highPass(hz, 0.7f, sr_);
     lp_[1].highPass(hz, 0.7f, sr_);
     lp_[2].lowPass(hz, 0.7f, sr_);

@@ -28,6 +28,24 @@ double rms(const std::vector<float>& x, int a, int b) {
   for (int i = a; i < b; ++i) s += double(x[i]) * x[i];
   return std::sqrt(s / std::max(1, b - a));
 }
+double crossingHz(const std::vector<float>& x, int a, int b) {
+  int crossings = 0;
+  float prev = 0.0f;
+  for (int i = a; i < b; ++i) {
+    if ((prev <= 0.0f && x[i] > 0.0f) || (prev >= 0.0f && x[i] < 0.0f)) {
+      ++crossings;
+    }
+    prev = x[i];
+  }
+  return crossings * 0.5 / ((b - a) / double(kSr));
+}
+double windowRms(const std::vector<float>& x, int a, int w) {
+  double s = 0.0;
+  for (int i = a; i < a + w && i < static_cast<int>(x.size()); ++i) {
+    s += double(x[i]) * x[i];
+  }
+  return std::sqrt(s / w);
+}
 bool finite(const std::vector<float>& x) {
   for (float v : x)
     if (!std::isfinite(v)) return false;
@@ -162,7 +180,7 @@ int main() {
     stomp::modules::PitchDrop pitch;
     pitch.prepare(kSr);
     stomp::modules::PitchDropControls c;
-    c.pitch = 0.75f;  // +12 semitones
+    c.pitch = 0.5f;  // +12 semitones in Whammy Up mode
     c.mode = 0;
     c.glide = 0.0f;
     c.mix = 1.0f;
@@ -404,6 +422,152 @@ int main() {
     x = tone(220.0f, 0.3f);
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; tape.process(l,r); x[i]=l; }
     check(finite(x), "Tape Sat stays finite");
+  }
+  {
+    // Octave tracking, one octave down and up.
+    auto octaveHz = [](bool up) {
+      stomp::modules::Octave oct;
+      oct.prepare(kSr);
+      stomp::modules::OctaveControls c;
+      c.down = up ? 0.0f : 0.9f;
+      c.up = up ? 0.9f : 0.0f;
+      c.tone = 0.9f;
+      c.mix = 1.0f;
+      oct.setControls(c);
+      std::vector<float> y(48000);
+      for (int i = 0; i < 48000; ++i) {
+        float l = 0.2f * std::sin(2.0f * 3.14159265f * 220.0f * i / kSr);
+        float r = l;
+        oct.process(l, r);
+        y[i] = l;
+      }
+      return crossingHz(y, 24000, 48000);
+    };
+    check(std::fabs(octaveHz(false) - 110.0) < 4.0,
+          "Octave down tracks one octave");
+    check(std::fabs(octaveHz(true) - 440.0) < 8.0,
+          "Octave up tracks one octave");
+
+    // EQ gain calibration.
+    stomp::modules::Eq3 eq;
+    eq.prepare(kSr, 120.0f, 800.0f, 4000.0f);
+    stomp::modules::Eq3Controls ec;
+    ec.mid = 1.0f;
+    eq.setControls(ec);
+    std::vector<float> in(24000), out(24000);
+    for (int i = 0; i < 24000; ++i) {
+      in[i] = 0.1f * std::sin(2.0f * 3.14159265f * 800.0f * i / kSr);
+      float l = in[i], r = in[i];
+      eq.process(l, r);
+      out[i] = l;
+    }
+    const double midDb =
+        20.0 * std::log10(rms(out, 12000, 24000) / rms(in, 12000, 24000));
+    check(std::fabs(midDb - 15.0) < 1.5, "3-Band EQ mid gain is 15 dB");
+
+    // Delay time accuracy.
+    stomp::modules::DigitalDelay delay;
+    delay.prepare(kSr);
+    stomp::modules::DigitalDelayControls dc;
+    dc.time = (400.0f - 20.0f) / 980.0f;
+    dc.feedback = 0.0f;
+    dc.tone = 1.0f;
+    dc.mix = 1.0f;
+    delay.setControls(dc);
+    std::vector<float> echo(kSr, 0.0f);
+    for (int i = 0; i < kSr; ++i) {
+      float l = (i == 0) ? 0.5f : 0.0f;
+      float r = l;
+      delay.process(l, r);
+      echo[i] = l;
+    }
+    int peak = 0;
+    for (int i = 1; i < kSr; ++i) {
+      if (std::fabs(echo[i]) > std::fabs(echo[peak])) peak = i;
+    }
+    const double echoMs = peak * 1000.0 / kSr;
+    check(std::fabs(echoMs - 400.0) < 2.0, "Digital Delay echo time is 400 ms");
+
+    // Gate must not chop a steady tone when the threshold sits near its peak.
+    stomp::modules::GatePedal gate;
+    gate.prepare(kSr);
+    stomp::modules::GatePedalControls gc;
+    gc.threshold = 0.72f;
+    gc.decay = 0.1f;
+    gc.range = 0.8f;
+    gc.link = 1.0f;
+    gate.setControls(gc, false);
+    std::vector<float> gated(48000);
+    for (int i = 0; i < 48000; ++i) {
+      float l = 0.2f * std::sin(2.0f * 3.14159265f * 220.0f * i / kSr);
+      float r = l;
+      gate.process(l, r);
+      gated[i] = l;
+    }
+    const double heldRms = rms(gated, 24000, 48000);
+    check(heldRms > 0.2 / std::sqrt(2.0) * 0.95,
+          "Gate holds a steady tone without chopping");
+
+    // FET compressor should reduce dynamic range.
+    auto fetOut = [](float amp) {
+      stomp::modules::FetComp f;
+      f.prepare(kSr);
+      stomp::modules::FetCompControls c;
+      c.input = 0.6f;
+      c.ratio = 0.6f;
+      c.attack = 0.5f;
+      c.release = 0.4f;
+      c.output = 0.5f;
+      f.setControls(c);
+      std::vector<float> y(24000);
+      for (int i = 0; i < 24000; ++i) {
+        float l = amp * std::sin(2.0f * 3.14159265f * 220.0f * i / kSr);
+        float r = l;
+        f.process(l, r);
+        y[i] = l;
+      }
+      return rms(y, 12000, 24000);
+    };
+    const double ratio = fetOut(0.5f) / std::max(1.0e-9, fetOut(0.05f));
+    check(ratio < 6.0, "FET Comp reduces dynamic range");
+
+    // Plate reverb decay calibration (display 2.05 s at 0.15).
+    stomp::modules::PlateReverb rv;
+    rv.prepare(kSr);
+    stomp::modules::PlateReverbControls rc;
+    rc.decay = 0.15f;
+    rc.tone = 0.5f;
+    rc.mix = 1.0f;
+    rv.setControls(rc);
+    const int rn = kSr * 3;
+    std::vector<float> tail(rn);
+    for (int i = 0; i < rn; ++i) {
+      float l = 0.0f, r = 0.0f;
+      if (i < kSr / 10) {
+        l = r = 0.3f * std::sin(2.0f * 3.14159265f * 300.0f * i / kSr);
+      }
+      rv.process(l, r);
+      tail[i] = l;
+    }
+    const int win = 2400;
+    double refPeak = 0.0;
+    int peakAt = 0;
+    for (int i = kSr / 10; i < kSr * 2; i += win) {
+      const double r = windowRms(tail, i, win);
+      if (r > refPeak) {
+        refPeak = r;
+        peakAt = i;
+      }
+    }
+    int rt = -1;
+    for (int i = peakAt; i < rn - win; i += win) {
+      if (windowRms(tail, i, win) < refPeak * 0.001) {
+        rt = i;
+        break;
+      }
+    }
+    const double rt60 = rt > 0 ? (rt - peakAt) / double(kSr) : -1.0;
+    check(rt60 > 1.5 && rt60 < 2.6, "Plate reverb decay is calibrated");
   }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;

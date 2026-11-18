@@ -52,8 +52,7 @@ public:
     const float gate = std::min(env_ * 3.0f, 1.0f);
     const float sub = subState_ * gate * down_;
     const float rectified = dc_.process(std::fabs(in) * 1.6f);
-    const float wet = tone_.process(sub + rectified * up_ * 2.0f *
-                                             (env_ > 0.001f ? 1.0f : 0.0f));
+    const float wet = tone_.process(sub + rectified * up_ * 2.0f * gate);
 
     l += (wet - l) * mix_;
     r += (wet - r) * mix_;

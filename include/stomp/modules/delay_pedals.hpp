@@ -18,6 +18,7 @@ class DelayCore {
 public:
   void prepare(float sr, float maxMs) noexcept {
     delay_.prepare(sr, maxMs);
+    first_ = true;
   }
   void configure(int mode, float time, float feedback, float tone, float mix,
                  float mod) noexcept {
@@ -33,33 +34,51 @@ public:
     c.delayWidth = 50.0f;
     c.delayDuck = 0.0f;
     delay_.setControls(c, 120.0f);
+    if (first_) {
+      delay_.reset();
+      first_ = false;
+    }
   }
   inline void process(float& l, float& r) noexcept { delay_.process(l, r); }
   void reset() noexcept { delay_.reset(); }
 
 private:
   hdsp::space::Delay delay_;
+  bool first_ = true;
 };
 
 class ReverbCore {
 public:
-  void prepare(float sr) noexcept { reverb_.prepare(sr); }
+  void prepare(float sr) noexcept {
+    reverb_.prepare(sr);
+    first_ = true;
+  }
   void configure(int mode, float decay, float tone, float mix) noexcept {
     hdsp::space::Controls c;
     c.reverbOn = true;
     c.reverbMode = mode;
-    c.reverbDecay = 0.3f + 11.7f * clamp01(decay);
+    // Compensate the tank's intrinsic losses so the Decay readout matches the
+    // measured RT60 for each mode.
+    float requested = 0.3f + 11.7f * clamp01(decay);
+    if (mode == 1) requested = (0.3f + 9.7f * clamp01(decay)) * 1.2f;
+    if (mode == 3) requested = (0.3f + 5.7f * clamp01(decay)) * 1.9f;
+    c.reverbDecay = std::min(std::max(requested, 0.3f), 12.0f);
     c.reverbTone = 100.0f * clamp01(tone);
     c.reverbMix = 100.0f * clamp01(mix);
     c.reverbWidth = 70.0f;
     c.reverbPreDelay = 0.0f;
     reverb_.setControls(c);
+    if (first_) {
+      reverb_.reset();
+      first_ = false;
+    }
   }
   inline void process(float& l, float& r) noexcept { reverb_.process(l, r); }
   void reset() noexcept { reverb_.reset(); }
 
 private:
   hdsp::space::Reverb reverb_;
+  bool first_ = true;
 };
 } // namespace delaydetail
 
