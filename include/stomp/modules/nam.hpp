@@ -37,6 +37,7 @@ struct NamAmpControls {
   float mid = 0.50f;
   float treble = 0.50f;
   float level = 0.50f;
+  float gate = 0.35f;  // 0 = off; higher = more aggressive
 };
 
 // Amp pedal: input trim -> NAM model -> 3-band EQ -> output level.

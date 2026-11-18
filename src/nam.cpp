@@ -260,6 +260,15 @@ struct NamAmpPedal::Impl {
   float sampleRate = 48000.0f;
   float gain = 1.0f;
   float level = 1.0f;
+  bool gateOn = true;
+  float gateThreshold = 0.001f;
+  float gateFloor = 0.0003f;
+  float gateAttack = 0.1f;
+  float gateRelease = 0.001f;
+  float gateGainAttack = 0.1f;
+  float gateGainRelease = 0.001f;
+  float gateEnv = 0.0f;
+  float gateGain = 1.0f;
   std::vector<float> blockIn;
   std::vector<float> blockOut;
   std::vector<float> mono;
@@ -285,12 +294,25 @@ struct NamAmpPedal::Impl {
     dc.highPass(15.0f, 0.7f, sampleRate);
     gain = hdsp::dbToGain(-12.0f + 36.0f * c.gain);
     level = hdsp::dbToGain(-12.0f + 24.0f * c.level);
+    gateOn = c.gate > 0.01f;
+    gateThreshold = hdsp::dbToGain(-60.0f + 40.0f * c.gate);
+    gateFloor = hdsp::dbToGain(-70.0f);
+    const auto coeff = [this](float ms) {
+      return 1.0f - std::exp(-1.0f / (std::max(ms, 0.05f) * 0.001f *
+                                      sampleRate));
+    };
+    gateAttack = coeff(1.0f);
+    gateRelease = coeff(80.0f);
+    gateGainAttack = coeff(0.3f);
+    gateGainRelease = coeff(80.0f);
   }
 
   void resetBuffers() noexcept {
     inCount = 0;
     outCount = 0;
     outPos = 0;
+    gateEnv = 0.0f;
+    gateGain = 1.0f;
     std::fill(blockIn.begin(), blockIn.end(), 0.0f);
     std::fill(blockOut.begin(), blockOut.end(), 0.0f);
   }
