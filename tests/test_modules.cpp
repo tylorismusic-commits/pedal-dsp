@@ -569,6 +569,27 @@ int main() {
     const double rt60 = rt > 0 ? (rt - peakAt) / double(kSr) : -1.0;
     check(rt60 > 1.5 && rt60 < 2.6, "Plate reverb decay is calibrated");
   }
+  {
+    stomp::modules::Tuner tuner;
+    tuner.prepare(kSr);
+    for (int i = 0; i < kSr; ++i) {
+      const float v = 0.2f * std::sin(2.0f * 3.14159265f * 440.0f * i / kSr);
+      tuner.process(v, v);
+    }
+    check(std::fabs(tuner.frequency() - 440.0f) < 1.5f,
+          "Tuner detects 440 Hz");
+    check(tuner.midiNote() == 69, "Tuner reports A4");
+    check(std::fabs(tuner.cents()) < 5.0f, "Tuner cents are in tune");
+    for (int i = 0; i < kSr; ++i) {
+      const float v = 0.2f * std::sin(2.0f * 3.14159265f * 110.0f * i / kSr);
+      tuner.process(v, v);
+    }
+    check(std::fabs(tuner.frequency() - 110.0f) < 1.0f,
+          "Tuner detects 110 Hz");
+    check(tuner.midiNote() == 45, "Tuner reports A2");
+    for (int i = 0; i < kSr; ++i) tuner.process(0.0f, 0.0f);
+    check(tuner.confidence() < 0.1f, "Tuner releases on silence");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);

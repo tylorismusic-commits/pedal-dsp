@@ -11,3 +11,4 @@
 #include "octave.hpp"
 #include "dynamics.hpp"
 #include "utility.hpp"
+#include "tuner.hpp"
