@@ -312,7 +312,7 @@ struct NamAmpPedal::Impl {
     outCount = 0;
     outPos = 0;
     gateEnv = 0.0f;
-    gateGain = 1.0f;
+    gateGain = 0.0f;
     std::fill(blockIn.begin(), blockIn.end(), 0.0f);
     std::fill(blockOut.begin(), blockOut.end(), 0.0f);
   }
