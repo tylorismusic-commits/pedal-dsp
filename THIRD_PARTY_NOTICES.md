@@ -14,8 +14,3 @@ Guitarix's `ts9sim`:
 The nonlinear table in `third_party/guitarix/plugins/ts9nonlin.cc` and its
 wrapper are included under the GNU General Public License version 2 or later.
 
-
-## Neural Amp Modeler core
-
-Vendored NeuralAmpModelerCore (MIT), Eigen (MPL2) and nlohmann/json (MIT)
-under `third_party/nam`. See `third_party/nam/README.md` and `NAM_LICENSE`.
