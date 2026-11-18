@@ -6,6 +6,8 @@
 #include <cmath>
 #include <vector>
 
+#include <hdsp/biquad.hpp>
+
 namespace stomp::modules {
 
 namespace modulationdetail {
@@ -309,6 +311,151 @@ private:
   float rateHz_ = 0.4f;
   float depth_ = 0.6f;
   float shape_ = 0.2f;
+  float mix_ = 1.0f;
+};
+
+
+// Bass chorus: modulation stays above the low band so the fundamental keeps
+// its weight.
+struct BassChorusControls {
+  float rate = 0.30f;
+  float depth = 0.50f;
+  float lowCut = 0.30f;
+  float mix = 0.45f;
+};
+
+class BassChorus {
+public:
+  void prepare(float sr) noexcept {
+    sr_ = sr > 0.0f ? sr : 48000.0f;
+    const int maxSamples = static_cast<int>(sr_ * 0.035f) + 4;
+    for (auto& d : delay_) d.prepare(maxSamples);
+    reset();
+    dirty_ = true;
+  }
+  void setControls(const BassChorusControls& c) noexcept {
+    c_ = c;
+    dirty_ = true;
+  }
+  inline void process(float& l, float& r) noexcept {
+    update();
+    phase_ += 2.0f * kPi * rateHz_ / sr_;
+    if (phase_ >= 2.0f * kPi) phase_ -= 2.0f * kPi;
+
+    const float modL = 0.5f + 0.5f * std::sin(phase_);
+    const float modR = 0.5f + 0.5f * std::sin(phase_ + kPi * 0.5f);
+    const float baseSamples = 0.008f * sr_;
+    const float depthSamples = depthMs_ * 0.001f * sr_;
+    const float wetL = delay_[0].read(baseSamples + depthSamples * modL);
+    const float wetR = delay_[1].read(baseSamples + depthSamples * modR);
+
+    delay_[0].push(l);
+    delay_[1].push(r);
+
+    // Split the wet signal: keep modulated highs, pass the clean lows.
+    const float modHiL = lp_[0].process(wetL);
+    const float modHiR = lp_[1].process(wetR);
+    const float cleanLoL = lp_[2].process(l);
+    const float cleanLoR = lp_[3].process(r);
+    const float chorusL = modHiL + cleanLoL;
+    const float chorusR = modHiR + cleanLoR;
+
+    l += (chorusL - l) * mix_;
+    r += (chorusR - r) * mix_;
+  }
+  void reset() noexcept {
+    for (auto& d : delay_) d.reset();
+    for (auto& f : lp_) f.reset();
+    phase_ = 0.0f;
+  }
+  int latencySamples() const noexcept { return 0; }
+
+private:
+  static constexpr float kPi = 3.14159265358979323846f;
+  void update() noexcept {
+    if (!dirty_) return;
+    dirty_ = false;
+    rateHz_ = modulationdetail::lfoRate(c_.rate);
+    depthMs_ = 0.5f + 6.0f * modulationdetail::clamp01(c_.depth);
+    mix_ = modulationdetail::clamp01(c_.mix);
+    const float hz = 60.0f * std::pow(12.0f, modulationdetail::clamp01(c_.lowCut));
+    lp_[0].highPass(hz, 0.7f, sr_);
+    lp_[1].highPass(hz, 0.7f, sr_);
+    lp_[2].lowPass(hz, 0.7f, sr_);
+    lp_[3].lowPass(hz, 0.7f, sr_);
+  }
+
+  float sr_ = 48000.0f;
+  bool dirty_ = true;
+  BassChorusControls c_;
+  modulationdetail::ModDelay delay_[2];
+  hdsp::Biquad lp_[4];
+  float phase_ = 0.0f;
+  float rateHz_ = 0.3f;
+  float depthMs_ = 3.0f;
+  float mix_ = 0.45f;
+};
+
+// Pitch vibrato from a fully modulated delay.
+struct VibratoControls {
+  float rate = 0.45f;
+  float depth = 0.50f;
+  float mix = 1.00f;
+};
+
+class Vibrato {
+public:
+  void prepare(float sr) noexcept {
+    sr_ = sr > 0.0f ? sr : 48000.0f;
+    const int maxSamples = static_cast<int>(sr_ * 0.015f) + 4;
+    for (auto& d : delay_) d.prepare(maxSamples);
+    reset();
+    dirty_ = true;
+  }
+  void setControls(const VibratoControls& c) noexcept {
+    c_ = c;
+    dirty_ = true;
+  }
+  inline void process(float& l, float& r) noexcept {
+    update();
+    phase_ += 2.0f * kPi * rateHz_ / sr_;
+    if (phase_ >= 2.0f * kPi) phase_ -= 2.0f * kPi;
+
+    const float mod = 0.5f + 0.5f * std::sin(phase_);
+    const float delaySamples =
+        (0.004f + depthMs_ * 0.001f * mod) * sr_;
+    const float wetL = delay_[0].read(delaySamples);
+    const float wetR = delay_[1].read(delaySamples);
+
+    delay_[0].push(l);
+    delay_[1].push(r);
+
+    l += (wetL - l) * mix_;
+    r += (wetR - r) * mix_;
+  }
+  void reset() noexcept {
+    for (auto& d : delay_) d.reset();
+    phase_ = 0.0f;
+  }
+  int latencySamples() const noexcept { return 0; }
+
+private:
+  static constexpr float kPi = 3.14159265358979323846f;
+  void update() noexcept {
+    if (!dirty_) return;
+    dirty_ = false;
+    rateHz_ = modulationdetail::lfoRate(c_.rate);
+    depthMs_ = 0.15f + 3.5f * modulationdetail::clamp01(c_.depth);
+    mix_ = modulationdetail::clamp01(c_.mix);
+  }
+
+  float sr_ = 48000.0f;
+  bool dirty_ = true;
+  VibratoControls c_;
+  modulationdetail::ModDelay delay_[2];
+  float phase_ = 0.0f;
+  float rateHz_ = 0.45f;
+  float depthMs_ = 1.9f;
   float mix_ = 1.0f;
 };
 

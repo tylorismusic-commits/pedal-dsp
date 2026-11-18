@@ -265,6 +265,67 @@ int main() {
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; reverb.process(l,r); x[i]=l; }
     check(finite(x), "Spring Reverb stays finite");
   }
+  {
+    stomp::modules::BassChorus bc;
+    bc.prepare(kSr);
+    stomp::modules::BassChorusControls bcc;
+    bc.setControls(bcc);
+    auto x = tone(80.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; bc.process(l,r); x[i]=l; }
+    check(finite(x), "Bass Chorus stays finite");
+    stomp::modules::Vibrato vib;
+    vib.prepare(kSr);
+    stomp::modules::VibratoControls vc;
+    vib.setControls(vc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; vib.process(l,r); x[i]=l; }
+    check(finite(x), "Vibrato stays finite");
+    stomp::modules::Octave oct;
+    oct.prepare(kSr);
+    stomp::modules::OctaveControls oc;
+    oc.down = 0.8f;
+    oct.setControls(oc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; oct.process(l,r); x[i]=l; }
+    check(finite(x), "Octave stays finite");
+  }
+  {
+    stomp::modules::DigitalDelay dd;
+    dd.prepare(kSr);
+    stomp::modules::DigitalDelayControls dc;
+    dd.setControls(dc);
+    auto x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; dd.process(l,r); x[i]=l; }
+    check(finite(x), "Digital Delay stays finite");
+    stomp::modules::PingPongDelay pp;
+    pp.prepare(kSr);
+    stomp::modules::PingPongControls pc;
+    pp.setControls(pc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; pp.process(l,r); x[i]=l; }
+    check(finite(x), "Ping-Pong Delay stays finite");
+    stomp::modules::TapeEcho te;
+    te.prepare(kSr);
+    stomp::modules::TapeEchoControls tc;
+    te.setControls(tc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; te.process(l,r); x[i]=l; }
+    check(finite(x), "Tape Echo stays finite");
+    stomp::modules::PlateReverb pr;
+    pr.prepare(kSr);
+    stomp::modules::PlateReverbControls prc;
+    pr.setControls(prc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; pr.process(l,r); x[i]=l; }
+    check(finite(x), "Plate Reverb stays finite");
+    stomp::modules::RoomReverb rr;
+    rr.prepare(kSr);
+    stomp::modules::RoomReverbControls rrc;
+    rr.setControls(rrc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; rr.process(l,r); x[i]=l; }
+    check(finite(x), "Room Reverb stays finite");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);

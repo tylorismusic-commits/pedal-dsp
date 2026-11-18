@@ -8,3 +8,4 @@
 #include "pitch.hpp"
 #include "modulation.hpp"
 #include "delay_pedals.hpp"
+#include "octave.hpp"
