@@ -210,6 +210,45 @@ int main() {
     std::printf("DBG retune hz %.2f\n", hz);
     check(std::fabs(hz - 440.0) < 25.0, "Retune shifts +12 semitones");
   }
+  {
+    stomp::modules::Chorus chorus;
+    chorus.prepare(kSr);
+    stomp::modules::ChorusControls c;
+    chorus.setControls(c);
+    auto x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; chorus.process(l,r); x[i]=l; }
+    check(finite(x), "Chorus stays finite");
+    stomp::modules::Flanger flanger;
+    flanger.prepare(kSr);
+    stomp::modules::FlangerControls fc;
+    flanger.setControls(fc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; flanger.process(l,r); x[i]=l; }
+    check(finite(x), "Flanger stays finite");
+    stomp::modules::Phaser phaser;
+    phaser.prepare(kSr);
+    stomp::modules::PhaserControls pc;
+    phaser.setControls(pc);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; phaser.process(l,r); x[i]=l; }
+    check(finite(x), "Phaser stays finite");
+    stomp::modules::Tremolo tremolo;
+    tremolo.prepare(kSr);
+    stomp::modules::TremoloControls tc;
+    tc.depth = 1.0f;
+    tc.shape = 0.0f;
+    tc.rate = 0.9f;
+    tremolo.setControls(tc);
+    x = tone(220.0f, 0.3f);
+    double drySum = 0.0, wetSum = 0.0;
+    for (int i = 0; i < kN; ++i) {
+      float l=x[i], r=x[i];
+      tremolo.process(l,r);
+      if (i > kN / 2) { drySum += double(x[i]) * x[i]; wetSum += double(l) * l; }
+    }
+    check(finite(x), "Tremolo stays finite");
+    check(wetSum < drySum * 0.9, "Tremolo modulates level");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);
