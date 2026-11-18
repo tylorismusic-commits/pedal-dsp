@@ -49,6 +49,7 @@ public:
   void prepare(float sr) noexcept {
     engine_.prepare(sr);
     engine_.clearLowCut();
+    engine_.setTone(1.0f);
     reset();
     dirty_ = true;
   }
