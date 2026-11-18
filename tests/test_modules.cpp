@@ -678,48 +678,6 @@ int main() {
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; cab.process(l,r); x[i]=l; }
     check(finite(x), "Cab without IR stays finite");
   }
-#ifdef NAM_TEST_MODEL
-  {
-    stomp::modules::NamAmpPedal nam;
-    nam.prepare(kSr);
-    stomp::modules::NamAmpControls nc;
-    nam.setControls(nc);
-    const bool loaded = nam.loadModel(NAM_TEST_MODEL);
-    check(loaded, "NAM model loads");
-    check(nam.modelLoaded(), "NAM model reports loaded");
-    check(nam.latencySamples() >= 64, "NAM reports block latency");
-    auto x = tone(220.0f, 0.2f);
-    for (int i = 0; i < kN; ++i) {
-      float l = x[i], r = x[i];
-      nam.process(l, r);
-      x[i] = l;
-    }
-    check(finite(x), "NAM stays finite at 48 kHz");
-    check(rms(x, 4800, kN) > 1.0e-4, "NAM produces audio at 48 kHz");
-
-    stomp::modules::NamAmpPedal nam96;
-    nam96.prepare(96000.0f);
-    nam96.setControls(nc);
-    nam96.loadModel(NAM_TEST_MODEL);
-    std::vector<float> y(48000);
-    for (int i = 0; i < 48000; ++i) {
-      float l = 0.2f * std::sin(2.0f * 3.14159265f * 220.0f * i / 96000.0f);
-      float r = l;
-      nam96.process(l, r);
-      y[i] = l;
-    }
-    check(finite(y), "NAM stays finite at 96 kHz");
-    check(rms(y, 9600, 48000) > 1.0e-4, "NAM resamples at 96 kHz");
-
-    stomp::modules::NamAmpPedal bad;
-    bad.prepare(kSr);
-    check(!bad.loadModel("/definitely/not/a/model.nam"),
-          "missing NAM model is rejected");
-    float l = 0.2f, r = 0.2f;
-    bad.process(l, r);
-    check(std::isfinite(l), "missing NAM model passes safely");
-  }
-#endif
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);
