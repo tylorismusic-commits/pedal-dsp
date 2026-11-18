@@ -82,22 +82,16 @@ public:
           kFft, reinterpret_cast<fftwf_complex*>(yR_.data()), outR_.data(),
           FFTW_ESTIMATE);
     }
+    if (taps_ > 0 && ir_) computeIr();
     reset();
     dirty_ = true;
   }
 
   void setIR(const float* h, int taps) noexcept {
+    ir_ = h;
     taps_ = h ? std::min(std::max(taps, 0), kMaxTaps) : 0;
     if (fwdL_ && taps_ > 0) {
-      for (int p = 0; p < kParts; ++p) {
-        std::fill(timeL_.begin(), timeL_.end(), 0.0f);
-        const int start = p * kBlock;
-        const int count = std::min(kBlock, std::max(0, taps_ - start));
-        for (int i = 0; i < count; ++i) timeL_[static_cast<size_t>(i)] = h[start + i];
-        fftwf_execute(fwdL_);
-        std::copy(freqL_.begin(), freqL_.end(),
-                  irFreq_.begin() + static_cast<size_t>(p) * kBins);
-      }
+      computeIr();
     } else {
       std::fill(irFreq_.begin(), irFreq_.end(), std::complex<float>(0.0f, 0.0f));
     }
@@ -165,6 +159,21 @@ public:
   int latencySamples() const noexcept { return taps_ > 0 ? kBlock : 0; }
 
 private:
+  void computeIr() noexcept {
+    if (!fwdL_ || !ir_ || taps_ <= 0) return;
+    for (int p = 0; p < kParts; ++p) {
+      std::fill(timeL_.begin(), timeL_.end(), 0.0f);
+      const int start = p * kBlock;
+      const int count = std::min(kBlock, std::max(0, taps_ - start));
+      for (int i = 0; i < count; ++i) {
+        timeL_[static_cast<size_t>(i)] = ir_[start + i];
+      }
+      fftwf_execute(fwdL_);
+      std::copy(freqL_.begin(), freqL_.end(),
+                irFreq_.begin() + static_cast<size_t>(p) * kBins);
+    }
+  }
+
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
@@ -227,6 +236,7 @@ private:
   bool dirty_ = true;
   CabControls c_;
   int taps_ = 0;
+  const float* ir_ = nullptr;
   fftwf_plan fwdL_ = nullptr, fwdR_ = nullptr, invL_ = nullptr, invR_ = nullptr;
   std::vector<float> timeL_, timeR_;
   std::vector<std::complex<float>> freqL_, freqR_, yL_, yR_;

@@ -680,6 +680,15 @@ int main() {
     x = tone(220.0f, 0.3f);
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; cab.process(l,r); x[i]=l; }
     check(finite(x), "Cab without IR stays finite");
+
+    // An IR selected before prepare must survive the lazy preparation.
+    stomp::modules::Cabinet late;
+    late.setIR(ir.data(), static_cast<int>(ir.size()));
+    late.prepare(kSr);
+    auto z = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=z[i], r=z[i]; late.process(l,r); z[i]=l; }
+    check(rms(z, 4800, kN) > 0.01,
+          "Cab keeps an IR selected before prepare");
   }
 #ifdef NAM_TEST_MODEL
   {
