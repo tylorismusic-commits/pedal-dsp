@@ -590,6 +590,75 @@ int main() {
     for (int i = 0; i < kSr; ++i) tuner.process(0.0f, 0.0f);
     check(tuner.confidence() < 0.1f, "Tuner releases on silence");
   }
+  {
+    stomp::modules::PrecisionDrive pd;
+    pd.prepare(kSr);
+    stomp::modules::PrecisionDriveControls pc;
+    pc.gate = 0.0f;
+    pc.drive = 0.2f;
+    pc.attack = 0.0f;
+    pd.setControls(pc);
+    auto loose = tone(80.0f, 0.2f);
+    for (int i = 0; i < kN; ++i) { float l=loose[i], r=l; pd.process(l,r); loose[i]=l; }
+    pc.attack = 1.0f;
+    pd.setControls(pc);
+    auto tight = tone(80.0f, 0.2f);
+    for (int i = 0; i < kN; ++i) { float l=tight[i], r=l; pd.process(l,r); tight[i]=l; }
+    check(finite(tight), "Precision Drive stays finite");
+    check(rms(tight, kN / 2, kN) < rms(loose, kN / 2, kN) * 0.7,
+          "Precision Drive Attack tightens the low end");
+
+    stomp::modules::PrecisionDrive gatePd;
+    gatePd.prepare(kSr);
+    stomp::modules::PrecisionDriveControls gc;
+    gc.gate = 0.9f;
+    gc.drive = 0.2f;
+    gc.attack = 0.5f;
+    gatePd.setControls(gc);
+    auto quiet = tone(220.0f, 0.004f);
+    for (int i = 0; i < kN; ++i) { float l=quiet[i], r=l; gatePd.process(l,r); quiet[i]=l; }
+    check(rms(quiet, kN / 2, kN) < 0.004 / std::sqrt(2.0) * 0.3,
+          "Precision Drive gate closes on low-level signal");
+    check(gatePd.gainReductionDb() > 6.0, "Precision Drive reports gate GR");
+
+    stomp::modules::Wah wah;
+    wah.prepare(kSr);
+    stomp::modules::WahControls wc;
+    wc.pedal = 0.0f;
+    wc.q = 0.6f;
+    wc.range = 0.5f;
+    wah.setControls(wc);
+    auto lowWah = tone(700.0f, 0.2f);
+    for (int i = 0; i < kN; ++i) { float l=lowWah[i], r=l; wah.process(l,r); lowWah[i]=l; }
+    wc.pedal = 0.5f;
+    wah.setControls(wc);
+    auto midWah = tone(700.0f, 0.2f);
+    for (int i = 0; i < kN; ++i) { float l=midWah[i], r=l; wah.process(l,r); midWah[i]=l; }
+    check(finite(midWah), "Wah stays finite");
+    check(rms(midWah, kN / 2, kN) > rms(lowWah, kN / 2, kN) * 1.5,
+          "Wah pedal sweeps the band-pass");
+
+    stomp::modules::Laser laser;
+    laser.prepare(kSr);
+    stomp::modules::LaserControls lc;
+    lc.pitch = 0.75f;  // +12 st
+    lc.ring = 0.0f;
+    lc.sens = 0.0f;
+    lc.pedal = 0.5f;
+    lc.mix = 1.0f;
+    laser.setControls(lc);
+    std::vector<float> out(96000);
+    for (int i = 0; i < 96000; ++i) {
+      float l = 0.2f * std::sin(2.0f * 3.14159265f * 220.0f * i / kSr);
+      float r = l;
+      laser.process(l, r);
+      out[i] = l;
+    }
+    check(finite(out), "Laser stays finite");
+    check(std::fabs(crossingHz(out, 48000, 96000) - 440.0) < 20.0,
+          "Laser shifts pitch");
+    check(laser.latencySamples() > 0, "Laser reports latency");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);
