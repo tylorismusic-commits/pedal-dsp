@@ -429,7 +429,7 @@ private:
   inline float processCh(Channel& ch, float x) noexcept {
     x = ch.hpf.process(x);
     x = x * gain_ + bias_;
-    x = ch.clip.process(x) - ch.clip.process(bias_);
+    x = ch.clip.process(x) - std::tanh(bias_);
     x = ch.tone.process(x);
     return x * level_;
   }
