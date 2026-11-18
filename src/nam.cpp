@@ -385,8 +385,23 @@ void NamAmpPedal::process(float& l, float& r) noexcept {
               impl_->mono.begin());
     if (impl_->model.loaded()) impl_->model.process(impl_->mono.data(),
                                                     Impl::kBlock);
+    const float gain = std::max(impl_->gain, 1.0e-6f);
     for (int i = 0; i < Impl::kBlock; ++i) {
-      float wet = impl_->mono[static_cast<size_t>(i)];
+      const float det =
+          std::fabs(impl_->blockIn[static_cast<size_t>(i)] / gain);
+      impl_->gateEnv += (det - impl_->gateEnv) *
+                        (det > impl_->gateEnv ? impl_->gateAttack
+                                              : impl_->gateRelease);
+      const float target =
+          impl_->gateOn
+              ? (impl_->gateEnv > impl_->gateThreshold ? 1.0f
+                                                       : impl_->gateFloor)
+              : 1.0f;
+      impl_->gateGain +=
+          (target - impl_->gateGain) *
+          (target > impl_->gateGain ? impl_->gateGainAttack
+                                    : impl_->gateGainRelease);
+      float wet = impl_->mono[static_cast<size_t>(i)] * impl_->gateGain;
       wet = impl_->dc.process(
           impl_->treble.process(impl_->mid.process(impl_->bass.process(wet))));
       wet *= impl_->level;
