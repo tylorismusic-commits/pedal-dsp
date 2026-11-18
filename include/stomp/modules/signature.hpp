@@ -100,7 +100,7 @@ private:
     gateThreshold_ = hdsp::dbToGain(-60.0f + 30.0f * sigdetail::clamp01(c_.gate));
     gateFloor_ = hdsp::dbToGain(-80.0f);
     const float hpHz =
-        55.0f * std::pow(7.0f, sigdetail::clamp01(c_.attack));
+        55.0f * std::pow(4.7f, sigdetail::clamp01(c_.attack));
     hpL_.highPass(hpHz, 0.75f, sr_);
     hpR_.highPass(hpHz, 0.75f, sr_);
     midL_.peak(720.0f, 4.5f, 0.9f, sr_);
