@@ -711,6 +711,22 @@ int main() {
     check(finite(y), "NAM stays finite at 96 kHz");
     check(rms(y, 9600, 48000) > 1.0e-4, "NAM resamples at 96 kHz");
 
+    stomp::modules::NamAmpPedal gated;
+    gated.prepare(kSr);
+    stomp::modules::NamAmpControls gc;
+    gc.gate = 0.9f;
+    gated.setControls(gc);
+    gated.loadModel(NAM_TEST_MODEL);
+    std::vector<float> quiet(48000);
+    for (int i = 0; i < 48000; ++i) {
+      float l = 0.001f * std::sin(2.0f * 3.14159265f * 220.0f * i / kSr);
+      float r = l;
+      gated.process(l, r);
+      quiet[i] = l;
+    }
+    check(rms(quiet, 24000, 48000) < 1.0e-5,
+          "NAM gate mutes the model noise floor");
+
     stomp::modules::NamAmpPedal bad;
     bad.prepare(kSr);
     check(!bad.loadModel("/definitely/not/a/model.nam"),
