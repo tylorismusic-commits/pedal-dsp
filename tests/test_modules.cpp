@@ -68,6 +68,69 @@ int main() {
     check(finite(x), "808 stays finite");
     check(rms(x, 4800, kN) > 0.01, "808 produces output");
   }
+  {
+    stomp::modules::TrebleBoost treble;
+    treble.prepare(kSr);
+    stomp::modules::TrebleBoostControls c;
+    treble.setControls(c);
+    auto x = tone(2000.0f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; treble.process(l,r); x[i]=l; }
+    check(finite(x), "Treble Boost stays finite");
+  }
+  {
+    stomp::modules::Overdrive od;
+    od.prepare(kSr);
+    stomp::modules::OverdriveControls c;
+    od.setControls(c);
+    auto x = tone(440.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; od.process(l,r); x[i]=l; }
+    check(finite(x), "Overdrive stays finite");
+  }
+  {
+    stomp::modules::BluesDrive bd;
+    bd.prepare(kSr);
+    stomp::modules::BluesDriveControls c;
+    bd.setControls(c);
+    auto x = tone(440.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; bd.process(l,r); x[i]=l; }
+    check(finite(x), "Blues Drive stays finite");
+  }
+  {
+    stomp::modules::Distortion dist;
+    dist.prepare(kSr);
+    stomp::modules::DistortionControls c;
+    dist.setControls(c);
+    auto x = tone(440.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; dist.process(l,r); x[i]=l; }
+    check(finite(x), "Distortion stays finite");
+  }
+  {
+    stomp::modules::Rat rat;
+    rat.prepare(kSr);
+    stomp::modules::RatControls c;
+    rat.setControls(c);
+    auto x = tone(440.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; rat.process(l,r); x[i]=l; }
+    check(finite(x), "Rat stays finite");
+  }
+  {
+    stomp::modules::BigFuzz fuzz;
+    fuzz.prepare(kSr);
+    stomp::modules::BigFuzzControls c;
+    fuzz.setControls(c);
+    auto x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; fuzz.process(l,r); x[i]=l; }
+    check(finite(x), "Big Fuzz stays finite");
+  }
+  {
+    stomp::modules::FuzzFace fuzz;
+    fuzz.prepare(kSr);
+    stomp::modules::FuzzFaceControls c;
+    fuzz.setControls(c);
+    auto x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; fuzz.process(l,r); x[i]=l; }
+    check(finite(x), "Fuzz Face stays finite");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);

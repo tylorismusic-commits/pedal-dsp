@@ -4,3 +4,4 @@
 
 #include "boost.hpp"
 #include "drive808.hpp"
+#include "drive_pedals.hpp"
