@@ -111,6 +111,15 @@ public:
 
   inline void process(float& l, float& r) noexcept {
     update();
+    if (taps_ <= 0) {
+      float wet = hpL_.process(l);
+      wet = lpL_.process(wet) * level_;
+      float wr = hpR_.process(r);
+      wr = lpR_.process(wr) * level_;
+      l += (wet - l) * mix_;
+      r += (wr - r) * mix_;
+      return;
+    }
     inL_[static_cast<size_t>(inCount_)] = l;
     inR_[static_cast<size_t>(inCount_)] = r;
     if (++inCount_ >= kBlock) {
@@ -153,7 +162,7 @@ public:
     hpL_.reset(); hpR_.reset(); lpL_.reset(); lpR_.reset();
   }
 
-  int latencySamples() const noexcept { return kBlock; }
+  int latencySamples() const noexcept { return taps_ > 0 ? kBlock : 0; }
 
 private:
   void update() noexcept {
