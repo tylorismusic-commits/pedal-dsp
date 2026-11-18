@@ -659,6 +659,25 @@ int main() {
           "Laser shifts pitch");
     check(laser.latencySamples() > 0, "Laser reports latency");
   }
+  {
+    std::vector<float> ir(64, 0.0f);
+    ir[0] = 1.0f;
+    stomp::modules::Cabinet cab;
+    cab.prepare(kSr);
+    cab.setIR(ir.data(), static_cast<int>(ir.size()));
+    stomp::modules::CabControls cc;
+    cc.lowCut = 0.0f;
+    cc.highCut = 1.0f;
+    cab.setControls(cc);
+    auto x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; cab.process(l,r); x[i]=l; }
+    check(finite(x), "Cab stays finite");
+    check(rms(x, 4800, kN) > 0.01, "Cab passes audio");
+    cab.setIR(nullptr, 0);
+    x = tone(220.0f, 0.3f);
+    for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; cab.process(l,r); x[i]=l; }
+    check(finite(x), "Cab without IR stays finite");
+  }
   for (float sr : {48000.0f, 96000.0f}) {
     stomp::modules::Drive808 drive;
     drive.prepare(sr);
