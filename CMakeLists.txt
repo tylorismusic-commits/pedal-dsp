@@ -59,6 +59,8 @@ if(PEDAL_DSP_BUILD_TESTS)
   enable_testing()
   add_executable(pedal_dsp_test tests/test_modules.cpp)
   target_link_libraries(pedal_dsp_test PRIVATE pedal_dsp)
+  target_compile_definitions(pedal_dsp_test PRIVATE
+    NAM_TEST_MODEL="${CMAKE_CURRENT_SOURCE_DIR}/third_party/nam/test_wavenet.nam")
   if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(pedal_dsp_test PRIVATE -Wall -Wextra)
   endif()

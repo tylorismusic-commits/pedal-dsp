@@ -255,6 +255,7 @@ struct NamAmpPedal::Impl {
   hdsp::Biquad bass;
   hdsp::Biquad mid;
   hdsp::Biquad treble;
+  hdsp::Biquad dc;
   bool dirty = true;
   float sampleRate = 48000.0f;
   float gain = 1.0f;
@@ -281,6 +282,7 @@ struct NamAmpPedal::Impl {
     bass.lowShelf(100.0f, lowDb, 0.7f, sampleRate);
     mid.peak(700.0f, midDb, 0.8f, sampleRate);
     treble.highShelf(3000.0f, highDb, 0.7f, sampleRate);
+    dc.highPass(15.0f, 0.7f, sampleRate);
     gain = hdsp::dbToGain(-12.0f + 36.0f * c.gain);
     level = hdsp::dbToGain(-12.0f + 24.0f * c.level);
   }
@@ -302,6 +304,7 @@ void NamAmpPedal::prepare(float sampleRate) noexcept {
   impl_->bass.reset();
   impl_->mid.reset();
   impl_->treble.reset();
+  impl_->dc.reset();
   impl_->resetBuffers();
   impl_->dirty = true;
   impl_->model.prepare(impl_->sampleRate, Impl::kBlock);
@@ -331,6 +334,7 @@ void NamAmpPedal::reset() noexcept {
   impl_->bass.reset();
   impl_->mid.reset();
   impl_->treble.reset();
+  impl_->dc.reset();
   impl_->resetBuffers();
   impl_->model.prepare(impl_->sampleRate, Impl::kBlock);
 }
@@ -348,7 +352,8 @@ void NamAmpPedal::process(float& l, float& r) noexcept {
                                                     Impl::kBlock);
     for (int i = 0; i < Impl::kBlock; ++i) {
       float wet = impl_->mono[static_cast<size_t>(i)];
-      wet = impl_->treble.process(impl_->mid.process(impl_->bass.process(wet)));
+      wet = impl_->dc.process(
+          impl_->treble.process(impl_->mid.process(impl_->bass.process(wet))));
       wet *= impl_->level;
       impl_->blockOut[static_cast<size_t>(i)] = std::isfinite(wet) ? wet : 0.0f;
     }
