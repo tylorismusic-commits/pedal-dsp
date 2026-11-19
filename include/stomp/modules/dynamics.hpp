@@ -235,6 +235,101 @@ private:
   float releaseCoeff_ = 0.01f;
 };
 
+// Envelope-controlled auto-wah with a wider, more vocal sweep than the
+// general-purpose Envelope Filter.  The filter opens on picking attack and
+// closes with the envelope release; Sensitivity sets how hard the input drives
+// that sweep.
+struct AutoWahControls {
+  float sens = 0.55f;
+  float q = 0.60f;
+  float range = 0.65f;
+  float mix = 0.85f;
+};
+
+class AutoWah {
+public:
+  void prepare(float sr) noexcept {
+    sr_ = sr > 0.0f ? sr : 48000.0f;
+    attackCoeff_ = dyndetail::coeffForMs(1.5f, sr_);
+    releaseCoeff_ = dyndetail::coeffForMs(110.0f, sr_);
+    reset();
+    dirty_ = true;
+  }
+  void setControls(const AutoWahControls& c) noexcept {
+    c_ = c;
+    dirty_ = true;
+  }
+  inline void process(float& l, float& r) noexcept {
+    update();
+    const float detector =
+        std::max(std::fabs(l), std::fabs(r)) * sensGain_;
+    const float envCoeff = detector > env_ ? attackCoeff_ : releaseCoeff_;
+    env_ += (detector - env_) * envCoeff;
+
+    // Ignore tiny residual noise so the filter does not sit half-open.
+    const float drive = dyndetail::clamp01((env_ - 0.002f) * 1.35f);
+    const float octaves = rangeOct_ * drive;
+    const float hz = std::min(std::max(baseHz_ * std::exp2(octaves), 70.0f),
+                              sr_ * 0.42f);
+    const float g = std::tan(kPi * hz / sr_);
+    const float k = 1.0f / q_;
+
+    const float bpL = svf_[0].bandpass(l, g, k);
+    const float bpR = svf_[1].bandpass(r, g, k);
+    const float makeup = 1.2f + 0.55f * q_ / 12.0f;
+    const float wetL = bpL * makeup;
+    const float wetR = bpR * makeup;
+    l += (wetL - l) * mix_;
+    r += (wetR - r) * mix_;
+  }
+  void reset() noexcept {
+    env_ = 0.0f;
+    svf_[0].reset();
+    svf_[1].reset();
+  }
+  int latencySamples() const noexcept { return 0; }
+
+private:
+  static constexpr float kPi = 3.14159265358979323846f;
+  struct Svf {
+    float ic1 = 0.0f, ic2 = 0.0f;
+    void reset() noexcept { ic1 = ic2 = 0.0f; }
+    inline float bandpass(float x, float g, float k) noexcept {
+      const float a1 = 1.0f / (1.0f + g * (g + k));
+      const float a2 = g * a1;
+      const float a3 = g * a2;
+      const float v3 = x - ic2;
+      const float v1 = a1 * ic1 + a2 * v3;
+      const float v2 = ic2 + a2 * ic1 + a3 * v3;
+      ic1 = 2.0f * v1 - ic1;
+      ic2 = 2.0f * v2 - ic2;
+      return v1;
+    }
+  };
+  void update() noexcept {
+    if (!dirty_) return;
+    dirty_ = false;
+    sensGain_ = 1.5f + 34.0f * dyndetail::clamp01(c_.sens);
+    q_ = 0.7f * std::pow(18.0f, dyndetail::clamp01(c_.q));
+    rangeOct_ = 1.5f + 4.5f * dyndetail::clamp01(c_.range);
+    mix_ = dyndetail::clamp01(c_.mix);
+    baseHz_ = 140.0f;
+  }
+
+  float sr_ = 48000.0f;
+  bool dirty_ = true;
+  AutoWahControls c_;
+  Svf svf_[2];
+  float env_ = 0.0f;
+  float sensGain_ = 10.0f;
+  float q_ = 5.0f;
+  float rangeOct_ = 4.0f;
+  float mix_ = 0.85f;
+  float baseHz_ = 140.0f;
+  float attackCoeff_ = 0.1f;
+  float releaseCoeff_ = 0.01f;
+};
+
 // Stereo gate shared by the Noise Gate and Tight Gate pedals.
 struct GatePedalControls {
   float threshold = 0.50f;

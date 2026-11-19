@@ -376,6 +376,42 @@ int main() {
     x = tone(220.0f, 0.4f);
     for (int i = 0; i < kN; ++i) { float l=x[i], r=x[i]; wah.process(l,r); x[i]=l; }
     check(finite(x), "Envelope Filter stays finite");
+    stomp::modules::AutoWah autowah;
+    autowah.prepare(kSr);
+    stomp::modules::AutoWahControls awc;
+    awc.sens = 0.8f;
+    awc.q = 0.8f;
+    awc.range = 0.8f;
+    awc.mix = 1.0f;
+    autowah.setControls(awc);
+    x = tone(110.0f, 0.5f);
+    for (int i = 0; i < kN; ++i) {
+      float l=x[i], r=x[i]; autowah.process(l,r); x[i]=l;
+    }
+    check(finite(x), "Auto-Wah stays finite");
+    auto autowahGain = [&](float amp) {
+      stomp::modules::AutoWah w;
+      w.prepare(kSr);
+      stomp::modules::AutoWahControls wc;
+      wc.sens = 0.8f;
+      wc.q = 0.7f;
+      wc.range = 0.9f;
+      wc.mix = 1.0f;
+      w.setControls(wc);
+      std::vector<float> y = tone(6000.0f, amp);
+      for (int i = 0; i < kN; ++i) {
+        float l = y[i], r = y[i];
+        w.process(l, r);
+        y[i] = l;
+      }
+      double out = 0.0;
+      for (int i = kN / 2; i < kN; ++i) out += double(y[i]) * y[i];
+      return std::sqrt(out / (kN / 2)) / std::max(1.0e-9f, amp);
+    };
+    const float awLow = autowahGain(0.02f);
+    const float awHigh = autowahGain(0.4f);
+    std::printf("AutoWah gain low %.4f high %.4f\n", awLow, awHigh);
+    check(awHigh > awLow * 1.5, "Auto-Wah opens with input level");
     stomp::modules::NoiseGate gate;
     gate.prepare(kSr);
     stomp::modules::GatePedalControls gc;
