@@ -129,7 +129,7 @@ private:
     const float cents = -50.0f + 100.0f * pitchdetail::clamp01(c_.cents);
     const float total = static_cast<float>(semis) + cents / 100.0f;
     engine_.setRatio(std::pow(2.0f, total / 12.0f), 0.005f);
-    engine_.clearLowCut();
+    engine_.setLowCut(c_.lowCut);
   }
   PitchEngine engine_;
   RetuneControls c_;

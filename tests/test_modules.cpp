@@ -836,6 +836,37 @@ int main() {
     std::snprintf(label, sizeof(label), "808 finite at %.0f Hz", sr);
     check(ok, label);
   }
+  // Retune's Low Cut must actually remove the low end.
+  {
+    stomp::modules::Retune retune;
+    retune.prepare(kSr);
+    stomp::modules::RetuneControls c;
+    c.semitones = 0.5f;  // no shift
+    c.cents = 0.5f;
+    c.mix = 1.0f;
+    c.lowCut = 1.0f;     // 300 Hz
+    retune.setControls(c);
+    double cut = 0.0;
+    for (int i = 0; i < kN; ++i) {
+      float l = 0.2f * std::sin(2.0f * 3.14159265f * 80.0f * i / kSr);
+      float r = l;
+      retune.process(l, r);
+      if (i > 4800) cut += static_cast<double>(l) * l;
+    }
+    stomp::modules::Retune flat;
+    flat.prepare(kSr);
+    c.lowCut = 0.0f;
+    flat.setControls(c);
+    double full = 0.0;
+    for (int i = 0; i < kN; ++i) {
+      float l = 0.2f * std::sin(2.0f * 3.14159265f * 80.0f * i / kSr);
+      float r = l;
+      flat.process(l, r);
+      if (i > 4800) full += static_cast<double>(l) * l;
+    }
+    std::printf("retune low cut energy %.5f vs %.5f\n", cut, full);
+    check(cut < full * 0.5, "Retune low cut removes the low end");
+  }
   std::printf("%d failure(s)\n", failures);
   return failures == 0 ? 0 : 1;
 }
