@@ -6,7 +6,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(RUBBERBAND REQUIRED IMPORTED_TARGET rubberband)
 pkg_check_modules(FFTW3F REQUIRED IMPORTED_TARGET fftw3f)
 
 find_path(HDSP_INCLUDE_DIR hdsp/db.hpp
@@ -44,8 +43,10 @@ target_include_directories(pedal_dsp PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_include_directories(pedal_dsp PUBLIC ${HDSP_INCLUDE_DIR})
 target_include_directories(pedal_dsp PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/guitarix/plugins)
-target_link_libraries(pedal_dsp PUBLIC PkgConfig::RUBBERBAND PkgConfig::FFTW3F)
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/guitarix/plugins
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-stretch
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-linear/include)
+target_link_libraries(pedal_dsp PUBLIC PkgConfig::FFTW3F)
 target_compile_features(pedal_dsp PUBLIC cxx_std_17)
 
 include(GNUInstallDirs)

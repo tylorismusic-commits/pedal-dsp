@@ -162,8 +162,9 @@ public:
     const float k = 1.0f / q_;
     const float wetL = svf_[0].bandpass(l, g, k) * 2.0f;
     const float wetR = svf_[1].bandpass(r, g, k) * 2.0f;
-    l += (wetL - l) * mix_;
-    r += (wetR - r) * mix_;
+    const float mix = mix_;
+    l += (wetL - l) * mix;
+    r += (wetR - r) * mix;
   }
   void reset() noexcept {
     svf_[0].reset();
@@ -221,7 +222,7 @@ class Laser {
 public:
   void prepare(float sr) noexcept {
     sr_ = sr > 0.0f ? sr : 48000.0f;
-    engine_.prepare(sr_);
+    engine_.prepare(sr_, false);
     engine_.setTone(1.0f);
     engine_.clearLowCut();
     envAttack_ = sigdetail::coeffForMs(5.0f, sr_);
@@ -234,6 +235,9 @@ public:
     dirty_ = true;
   }
   inline void process(float& l, float& r) noexcept {
+    process(l, r, -1.0f);
+  }
+  inline void process(float& l, float& r, float mixOverride) noexcept {
     update();
     const float detector = std::max(std::fabs(l), std::fabs(r));
     env_ += (detector - env_) *
@@ -251,13 +255,9 @@ public:
     if (ringPhase_ >= 2.0f * kPi) ringPhase_ -= 2.0f * kPi;
     const float ringSig = std::sin(ringPhase_);
 
-    float wetL = l, wetR = r;
-    engine_.process(wetL, wetR, 1.0f);
     const float carrier = 1.0f - ring_ + ring_ * ringSig;
-    wetL *= carrier;
-    wetR *= carrier;
-    l += (wetL - l) * mix_;
-    r += (wetR - r) * mix_;
+    const float mix = mixOverride >= 0.0f ? mixOverride : mix_;
+    engine_.process(l, r, mix, carrier);
   }
   void reset() noexcept {
     engine_.reset();

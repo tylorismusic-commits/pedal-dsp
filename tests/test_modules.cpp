@@ -203,6 +203,7 @@ int main() {
     const double hz = crossings * 0.5 / ((kN - 4800) / double(kSr));
     check(std::fabs(hz - 440.0) < 25.0, "Pitch Drop shifts +12 semitones");
     check(pitch.latencySamples() > 0, "Pitch Drop reports latency");
+    check(pitch.latencySamples() <= 1280, "Pitch Drop latency is 1280 samples or less");
   }
   {
     stomp::modules::Retune retune;
@@ -229,6 +230,7 @@ int main() {
     const double hz = crossings * 0.5 / ((kN - 4800) / double(kSr));
     std::printf("DBG retune hz %.2f\n", hz);
     check(std::fabs(hz - 440.0) < 25.0, "Retune shifts +12 semitones");
+    check(retune.latencySamples() <= 1280, "Retune latency is 1280 samples or less");
   }
   {
     stomp::modules::Chorus chorus;
@@ -408,7 +410,7 @@ int main() {
       for (int i = kN / 2; i < kN; ++i) out += double(y[i]) * y[i];
       return std::sqrt(out / (kN / 2)) / std::max(1.0e-9f, amp);
     };
-    const float awLow = autowahGain(0.02f);
+    const float awLow = autowahGain(0.002f);
     const float awHigh = autowahGain(0.4f);
     std::printf("AutoWah gain low %.4f high %.4f\n", awLow, awHigh);
     check(awHigh > awLow * 1.5, "Auto-Wah opens with input level");

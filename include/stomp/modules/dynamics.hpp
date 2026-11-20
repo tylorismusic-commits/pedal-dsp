@@ -199,6 +199,17 @@ private:
   struct Svf {
     float ic1 = 0.0f, ic2 = 0.0f;
     void reset() noexcept { ic1 = ic2 = 0.0f; }
+    inline float lowpass(float x, float g, float k) noexcept {
+      const float a1 = 1.0f / (1.0f + g * (g + k));
+      const float a2 = g * a1;
+      const float a3 = g * a2;
+      const float v3 = x - ic2;
+      const float v1 = a1 * ic1 + a2 * v3;
+      const float v2 = ic2 + a2 * ic1 + a3 * v3;
+      ic1 = 2.0f * v1 - ic1;
+      ic2 = 2.0f * v2 - ic2;
+      return v2;
+    }
     inline float bandpass(float x, float g, float k) noexcept {
       const float a1 = 1.0f / (1.0f + g * (g + k));
       const float a2 = g * a1;
@@ -250,8 +261,8 @@ class AutoWah {
 public:
   void prepare(float sr) noexcept {
     sr_ = sr > 0.0f ? sr : 48000.0f;
-    attackCoeff_ = dyndetail::coeffForMs(1.5f, sr_);
-    releaseCoeff_ = dyndetail::coeffForMs(110.0f, sr_);
+    attackCoeff_ = dyndetail::coeffForMs(8.0f, sr_);
+    releaseCoeff_ = dyndetail::coeffForMs(140.0f, sr_);
     reset();
     dirty_ = true;
   }
@@ -274,11 +285,14 @@ public:
     const float g = std::tan(kPi * hz / sr_);
     const float k = 1.0f / q_;
 
-    const float bpL = svf_[0].bandpass(l, g, k);
-    const float bpR = svf_[1].bandpass(r, g, k);
-    const float makeup = 1.2f + 0.55f * q_ / 12.0f;
-    const float wetL = bpL * makeup;
-    const float wetR = bpR * makeup;
+    // A resonant low-pass is the classic auto-wah shape: it opens from a
+    // dark, vocal "ooh" to a bright "aah" as the envelope rises.  A band-pass
+    // removed both lows and highs and sounded static by comparison.
+    const float lpL = svf_[0].lowpass(l, g, k);
+    const float lpR = svf_[1].lowpass(r, g, k);
+    const float makeup = 0.75f + 1.1f / std::sqrt(q_);
+    const float wetL = lpL * makeup;
+    const float wetR = lpR * makeup;
     l += (wetL - l) * mix_;
     r += (wetR - r) * mix_;
   }
@@ -294,7 +308,7 @@ private:
   struct Svf {
     float ic1 = 0.0f, ic2 = 0.0f;
     void reset() noexcept { ic1 = ic2 = 0.0f; }
-    inline float bandpass(float x, float g, float k) noexcept {
+    inline float lowpass(float x, float g, float k) noexcept {
       const float a1 = 1.0f / (1.0f + g * (g + k));
       const float a2 = g * a1;
       const float a3 = g * a2;
@@ -303,17 +317,17 @@ private:
       const float v2 = ic2 + a2 * ic1 + a3 * v3;
       ic1 = 2.0f * v1 - ic1;
       ic2 = 2.0f * v2 - ic2;
-      return v1;
+      return v2;
     }
   };
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
-    sensGain_ = 1.5f + 34.0f * dyndetail::clamp01(c_.sens);
-    q_ = 0.7f * std::pow(18.0f, dyndetail::clamp01(c_.q));
-    rangeOct_ = 1.5f + 4.5f * dyndetail::clamp01(c_.range);
+    sensGain_ = 2.5f + 44.0f * dyndetail::clamp01(c_.sens);
+    q_ = 0.75f * std::pow(14.0f, dyndetail::clamp01(c_.q));
+    rangeOct_ = 2.0f + 5.0f * dyndetail::clamp01(c_.range);
     mix_ = dyndetail::clamp01(c_.mix);
-    baseHz_ = 140.0f;
+    baseHz_ = 180.0f;
   }
 
   float sr_ = 48000.0f;

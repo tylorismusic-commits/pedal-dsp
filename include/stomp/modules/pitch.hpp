@@ -14,7 +14,7 @@ inline float clamp01(float x) noexcept {
 }
 } // namespace pitchdetail
 
-// Pitch engine backed by Rubber Band Live's low-delay shifter.
+// Pitch engine backed by the vendored Signalsmith Stretch shifter.
 class PitchEngine {
 public:
   PitchEngine();
@@ -22,12 +22,12 @@ public:
   PitchEngine(const PitchEngine&) = delete;
   PitchEngine& operator=(const PitchEngine&) = delete;
 
-  void prepare(float sr) noexcept;
+  void prepare(float sr, bool preserveFormants = true) noexcept;
   void setRatio(float ratio, float glideSeconds) noexcept;
   void setTone(float tone) noexcept;
   void setLowCut(float lowCut) noexcept;
   void clearLowCut() noexcept;
-  void process(float& l, float& r, float mix) noexcept;
+  void process(float& l, float& r, float mix, float wetScale = 1.0f) noexcept;
   void reset() noexcept;
   int latencySamples() const noexcept;
 
@@ -47,7 +47,7 @@ struct PitchDropControls {
 class PitchDrop {
 public:
   void prepare(float sr) noexcept {
-    engine_.prepare(sr);
+    engine_.prepare(sr, false);
     engine_.clearLowCut();
     engine_.setTone(1.0f);
     reset();
@@ -58,8 +58,11 @@ public:
     dirty_ = true;
   }
   inline void process(float& l, float& r) noexcept {
+    process(l, r, c_.mix);
+  }
+  inline void process(float& l, float& r, float mix) noexcept {
     update();
-    engine_.process(l, r, c_.mix);
+    engine_.process(l, r, mix >= 0.0f ? mix : c_.mix);
   }
   void reset() noexcept { engine_.reset(); }
   int latencySamples() const noexcept { return engine_.latencySamples(); }
@@ -96,7 +99,7 @@ struct RetuneControls {
 class Retune {
 public:
   void prepare(float sr) noexcept {
-    engine_.prepare(sr);
+    engine_.prepare(sr, true);
     engine_.setLowCut(0.5f);
     engine_.setTone(1.0f);
     reset();
@@ -107,8 +110,11 @@ public:
     dirty_ = true;
   }
   inline void process(float& l, float& r) noexcept {
+    process(l, r, c_.mix);
+  }
+  inline void process(float& l, float& r, float mix) noexcept {
     update();
-    engine_.process(l, r, c_.mix);
+    engine_.process(l, r, mix >= 0.0f ? mix : c_.mix);
   }
   void reset() noexcept { engine_.reset(); }
   int latencySamples() const noexcept { return engine_.latencySamples(); }
