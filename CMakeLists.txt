@@ -43,7 +43,9 @@ target_include_directories(pedal_dsp PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_include_directories(pedal_dsp PUBLIC ${HDSP_INCLUDE_DIR})
 target_include_directories(pedal_dsp PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/guitarix/plugins)
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/guitarix/plugins
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-stretch
+  ${CMAKE_CURRENT_SOURCE_DIR}/third_party/signalsmith-linear/include)
 target_link_libraries(pedal_dsp PUBLIC PkgConfig::FFTW3F)
 target_compile_features(pedal_dsp PUBLIC cxx_std_17)
 
