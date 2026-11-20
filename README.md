@@ -17,4 +17,4 @@ ctest --test-dir build --output-on-failure
 GPL-3.0-or-later. See `THIRD_PARTY_NOTICES.md`.
 
 
-Dependencies: FFTW3F, hearth-dsp, and the vendored Signalsmith Stretch headers.
+Dependencies: FFTW3F and hearth-dsp.

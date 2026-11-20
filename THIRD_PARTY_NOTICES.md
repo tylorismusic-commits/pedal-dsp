@@ -15,14 +15,3 @@ The nonlinear table in `third_party/guitarix/plugins/ts9nonlin.cc` and its
 wrapper are included under the GNU General Public License version 2 or later.
 
 
-## Signalsmith Stretch
-
-`third_party/signalsmith-stretch` and `third_party/signalsmith-linear` vendor
-the Signalsmith Stretch pitch/time engine and its FFT support:
-
-- Copyright (C) Signalsmith Audio
-- MIT License
-- https://github.com/Signalsmith-Audio/signalsmith-stretch
-- https://github.com/Signalsmith-Audio/linear
-
-The vendored headers retain their original MIT license files.
