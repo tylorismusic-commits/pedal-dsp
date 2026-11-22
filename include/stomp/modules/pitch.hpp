@@ -8,6 +8,8 @@
 
 #include <hdsp/biquad.hpp>
 
+#include "sola.hpp"
+
 namespace stomp::modules {
 
 namespace pitchdetail {
@@ -93,10 +95,9 @@ private:
   bool dirty_ = true;
 };
 
-// DigiTech Drop-style transposer: polyphonic, one octave down, with the band
-// capped at 10 kHz and a 2048-sample analysis window.  That is the trade the
-// pedal makes — it gives up the top octave and some chord clarity to stay
-// quick, which is why it sounds darker than the clean engine.
+// DigiTech Drop-style transposer.  Time-domain like the Whammy but polyphonic:
+// the splice spacing is fixed instead of tracked, and the band is capped at
+// 10 kHz — the trade the pedal makes to stay quick, and why it sounds darker.
 struct DropControls {
   float semitones = 0.0f;  // 0 = unison, 1 = one octave down
   float tone = 0.5f;
@@ -107,9 +108,8 @@ class Drop {
 public:
   void prepare(float sr) noexcept {
     sr_ = sr > 0.0f ? sr : 48000.0f;
-    engine_.prepare(sr_, false, 2048, 256);
-    engine_.clearLowCut();
-    engine_.setTone(0.5f);
+    shifter_.prepare(sr_, 34.0f, 4.0f, 4.0f);
+    shifter_.setSpliceSamples(sr_ * 0.012f);
     lowL_.lowPass(10000.0f, 0.7f, sr_);
     lowR_.lowPass(10000.0f, 0.7f, sr_);
     reset();
@@ -121,27 +121,30 @@ public:
   }
   inline void process(float& l, float& r) noexcept {
     update();
-    l = lowL_.process(l);
-    r = lowR_.process(r);
-    engine_.process(l, r, mix_);
+    const float dryL = shifter_.dryLeft();
+    const float dryR = shifter_.dryRight();
+    float wetL = lowL_.process(l);
+    float wetR = lowR_.process(r);
+    shifter_.process(wetL, wetR);
+    l = dryL + (wetL - dryL) * mix_;
+    r = dryR + (wetR - dryR) * mix_;
   }
   void reset() noexcept {
-    engine_.reset();
+    shifter_.reset();
     lowL_.reset();
     lowR_.reset();
   }
-  int latencySamples() const noexcept { return engine_.latencySamples(); }
+  int latencySamples() const noexcept { return shifter_.latencySamples(); }
 
 private:
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
     const float semis = -12.0f * pitchdetail::clamp01(c_.semitones);
-    engine_.setRatio(std::pow(2.0f, semis / 12.0f), 0.02f);
-    engine_.setTone(c_.tone);
+    shifter_.setRatio(std::pow(2.0f, semis / 12.0f), 0.03f);
     mix_ = pitchdetail::clamp01(c_.mix);
   }
-  PitchEngine engine_;
+  SolaShifter shifter_;
   hdsp::Biquad lowL_, lowR_;
   DropControls c_;
   float sr_ = 48000.0f;
