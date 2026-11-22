@@ -129,44 +129,47 @@ private:
            buf[static_cast<size_t>(i1)] * frac;
   }
 
-  // Find the jump that best continues what we were playing: correlate a short
-  // window of the buffer at the current read position with the same window a
-  // splice's worth of samples away, and pick the strongest match.
+  // Find the jump that best continues what we were playing.  The comparison
+  // windows end at the read position, i.e. they look *backwards*: correlating
+  // forwards would run past the write head into stale audio from the previous
+  // lap of the ring, which is why the offset used to come out arbitrary.
   void splice() noexcept {
     const double d = delaySamples();
     const bool tooClose = d < static_cast<double>(minDelay_);
     const int base = std::max(16, static_cast<int>(std::lround(splice_)));
     const int lo = std::max(16, base * 3 / 4);
     const int hi = std::max(lo + 1, base * 5 / 4);
-    const int win = std::min(fade_, 256);
+    const int win = std::max(64, std::min(base, 1024));
 
-    auto energy = [&](double start) {
-      double e = 0.0;
-      for (int k = 0; k < win; ++k) {
-        const float v = tap(bufL_, start + k);
-        e += static_cast<double>(v) * v;
-      }
-      return e;
-    };
+    const double refStart = read_ - static_cast<double>(win);
+    double refEnergy = 0.0;
+    for (int k = 0; k < win; ++k) {
+      const float v = tap(bufL_, refStart + k);
+      refEnergy += static_cast<double>(v) * v;
+    }
 
-    double best = -1.0e30;
+    double bestScore = -2.0;
     int bestOffset = base;
-    const double ref = energy(read_);
-    for (int off = lo; off <= hi; ++off) {
-      const double cand = tooClose ? read_ - off : read_ + off;
-      const double ce = energy(cand);
-      if (ce <= 1.0e-12) continue;
-      double corr = 0.0;
-      for (int k = 0; k < win; ++k) {
-        corr += static_cast<double>(tap(bufL_, read_ + k)) *
-                static_cast<double>(tap(bufL_, cand + k));
-      }
-      const double norm = corr / std::sqrt(ref * ce + 1.0e-12);
-      if (norm > best) {
-        best = norm;
-        bestOffset = off;
+    if (refEnergy > 1.0e-9) {
+      for (int off = lo; off <= hi; ++off) {
+        const double cand = tooClose ? read_ - off : read_ + off;
+        const double candStart = cand - static_cast<double>(win);
+        double corr = 0.0, energy = 0.0;
+        for (int k = 0; k < win; ++k) {
+          const float a = tap(bufL_, refStart + k);
+          const float b = tap(bufL_, candStart + k);
+          corr += static_cast<double>(a) * b;
+          energy += static_cast<double>(b) * b;
+        }
+        if (energy <= 1.0e-12) continue;
+        const double score = corr / std::sqrt(refEnergy * energy);
+        if (score > bestScore) {
+          bestScore = score;
+          bestOffset = off;
+        }
       }
     }
+    if (bestScore < -1.0) return;  // nothing usable yet: keep playing
 
     oldRead_ = read_;
     read_ = tooClose ? read_ - bestOffset : read_ + bestOffset;

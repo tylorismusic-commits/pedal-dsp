@@ -111,22 +111,35 @@ private:
   // with strong second-harmonic content.
   void detectPitch() noexcept {
     const int n = octavedetail::kWindow;
+    // Chronological copy: a linear pass over the ring buffer puts the wrap in
+    // the middle of the window and destroys the long-lag match.
+    float window[octavedetail::kWindow];
+    for (int i = 0; i < n; ++i) {
+      window[i] = history_[static_cast<size_t>((historyPos_ + i) % n)];
+    }
     double energy = 0.0;
-    for (int i = 0; i < n; ++i) energy += history_[static_cast<size_t>(i)] * history_[static_cast<size_t>(i)];
-    if (energy < 1.0e-6) return;
+    for (int i = 0; i < n; ++i) {
+      energy += static_cast<double>(window[i]) * window[i];
+    }
+    if (energy < 1.0e-6) {
+      return;
+    }
 
     double best = 0.0;
     int bestLag = 0;
     for (int lag = octavedetail::kMinLag; lag <= octavedetail::kMaxLag; ++lag) {
-      double corr = 0.0, tail = 0.0;
+      // Both energies from the overlapped range: normalising against the
+      // whole window penalises long lags and locks an octave high.
+      double corr = 0.0, ea = 0.0, eb = 0.0;
       for (int i = 0; i + lag < n; ++i) {
-        const double a = history_[static_cast<size_t>(i)];
-        const double b = history_[static_cast<size_t>(i + lag)];
+        const double a = window[i];
+        const double b = window[i + lag];
         corr += a * b;
-        tail += b * b;
+        ea += a * a;
+        eb += b * b;
       }
-      if (tail <= 1.0e-9) continue;
-      const double norm = corr / std::sqrt(energy * tail);
+      if (ea <= 1.0e-9 || eb <= 1.0e-9) continue;
+      const double norm = corr / std::sqrt(ea * eb);
       if (norm > best) {
         best = norm;
         bestLag = lag;
@@ -140,14 +153,16 @@ private:
     for (int mult = 2; mult <= 3; ++mult) {
       const int lag = bestLag * mult;
       if (lag > octavedetail::kMaxLag) break;
-      double corr = 0.0, tail = 0.0;
+      double corr = 0.0, ea = 0.0, eb = 0.0;
       for (int i = 0; i + lag < n; ++i) {
-        const double a = history_[static_cast<size_t>(i)];
-        const double b = history_[static_cast<size_t>(i + lag)];
+        const double a = window[i];
+        const double b = window[i + lag];
         corr += a * b;
-        tail += b * b;
+        ea += a * a;
+        eb += b * b;
       }
-      if (tail > 1.0e-9 && corr / std::sqrt(energy * tail) > 0.82 * best) {
+      if (ea > 1.0e-9 && eb > 1.0e-9 &&
+          corr / std::sqrt(ea * eb) > 0.82 * best) {
         chosen = lag;
       }
     }

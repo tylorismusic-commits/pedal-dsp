@@ -97,11 +97,22 @@ private:
   static constexpr int kWindow = 1024;
   static constexpr int kHop = 256;
 
+  // Normalised autocorrelation over 70-500 Hz.  Both energies come from the
+  // overlapped range: normalising against the whole window penalises long lags
+  // and makes the tracker lock an octave high, which then puts the splices
+  // half a period apart.
   void detectPeriod() noexcept {
+    constexpr int n = kWindow;
+    // Copy out in chronological order: correlating the ring buffer linearly
+    // puts the wrap in the middle of the window, which breaks the match at
+    // long lags and made the tracker jump between the period and its half.
+    float window[kWindow];
+    for (int i = 0; i < n; ++i) {
+      window[i] = history_[static_cast<size_t>((historyPos_ + i) % n)];
+    }
     double energy = 0.0;
-    for (int i = 0; i < kWindow; ++i) {
-      energy += static_cast<double>(history_[static_cast<size_t>(i)]) *
-                history_[static_cast<size_t>(i)];
+    for (int i = 0; i < n; ++i) {
+      energy += static_cast<double>(window[i]) * window[i];
     }
     if (energy < 1.0e-6) {
       period_ = 0.0f;
@@ -110,23 +121,41 @@ private:
     double best = 0.0;
     int bestLag = 0;
     for (int lag = 96; lag <= 686; ++lag) {
-      double corr = 0.0, tail = 0.0;
-      for (int i = 0; i + lag < kWindow; ++i) {
-        const double a = history_[static_cast<size_t>(i)];
-        const double b = history_[static_cast<size_t>(i + lag)];
+      double corr = 0.0, ea = 0.0, eb = 0.0;
+      for (int i = 0; i + lag < n; ++i) {
+        const double a = window[i];
+        const double b = window[i + lag];
         corr += a * b;
-        tail += b * b;
+        ea += a * a;
+        eb += b * b;
       }
-      if (tail <= 1.0e-9) continue;
-      const double norm = corr / std::sqrt(energy * tail);
+      if (ea <= 1.0e-9 || eb <= 1.0e-9) continue;
+      const double norm = corr / std::sqrt(ea * eb);
       if (norm > best) {
         best = norm;
         bestLag = lag;
       }
     }
     if (best > 0.55 && bestLag > 0) {
-      const float p = static_cast<float>(bestLag);
+      int chosen = bestLag;
+      for (int mult = 2; mult <= 3; ++mult) {
+        const int lag = bestLag * mult;
+        if (lag > 686) break;
+        double corr = 0.0, ea = 0.0, eb = 0.0;
+        for (int i = 0; i + lag < n; ++i) {
+          const double a = window[i];
+          const double b = window[i + lag];
+          corr += a * b;
+          ea += a * a;
+          eb += b * b;
+        }
+        if (ea > 1.0e-9 && eb > 1.0e-9 && corr / std::sqrt(ea * eb) > 0.85 * best) {
+          chosen = lag;
+        }
+      }
+      const float p = static_cast<float>(chosen);
       period_ = period_ > 0.0f ? period_ + (p - period_) * 0.5f : p;
+
     } else {
       period_ = 0.0f;
     }
