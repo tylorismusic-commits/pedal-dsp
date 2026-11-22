@@ -144,7 +144,10 @@ private:
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
-    const float semis = -12.0f * pitchdetail::clamp01(c_.semitones);
+    // The pedal has discrete steps, so the DSP snaps too: a continuous knob
+    // would leave the ratio between semitones.
+    const float semis =
+        -std::round(12.0f * pitchdetail::clamp01(c_.semitones));
     shifter_.setRatio(std::pow(2.0f, semis / 12.0f), 0.03f);
     mix_ = pitchdetail::clamp01(c_.mix);
   }
