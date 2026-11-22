@@ -57,7 +57,10 @@ public:
     c_ = c;
     dirty_ = true;
   }
-  inline void process(float& l, float& r) noexcept {
+  // mixOverride >= 0 forces the dry/wet balance, which is how a bypassed slot
+  // keeps its latency while passing the signal through unchanged.
+  inline void process(float& l, float& r) noexcept { process(l, r, -1.0f); }
+  inline void process(float& l, float& r, float mixOverride) noexcept {
     update();
     const float in = 0.5f * (l + r);
     history_[static_cast<size_t>(historyPos_)] = in;
@@ -75,8 +78,9 @@ public:
     shifter_.process(wetL, wetR);
     wetL = toneL_.process(wetL);
     wetR = toneR_.process(wetR);
-    l = dryL + (wetL - dryL) * mix_;
-    r = dryR + (wetR - dryR) * mix_;
+    const float mix = mixOverride >= 0.0f ? mixOverride : mix_;
+    l = dryL + (wetL - dryL) * mix;
+    r = dryR + (wetR - dryR) * mix;
   }
   void reset() noexcept {
     std::fill(history_.begin(), history_.end(), 0.0f);

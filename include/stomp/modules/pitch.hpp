@@ -119,15 +119,19 @@ public:
     c_ = c;
     dirty_ = true;
   }
-  inline void process(float& l, float& r) noexcept {
+  inline void process(float& l, float& r) noexcept { process(l, r, -1.0f); }
+  // mixOverride >= 0 forces the dry/wet balance, so a bypassed slot can keep
+  // its latency and still pass the signal through unshifted.
+  inline void process(float& l, float& r, float mixOverride) noexcept {
     update();
+    const float mix = mixOverride >= 0.0f ? mixOverride : mix_;
     const float dryL = shifter_.dryLeft();
     const float dryR = shifter_.dryRight();
     float wetL = lowL_.process(l);
     float wetR = lowR_.process(r);
     shifter_.process(wetL, wetR);
-    l = dryL + (wetL - dryL) * mix_;
-    r = dryR + (wetR - dryR) * mix_;
+    l = dryL + (wetL - dryL) * mix;
+    r = dryR + (wetR - dryR) * mix;
   }
   void reset() noexcept {
     shifter_.reset();
