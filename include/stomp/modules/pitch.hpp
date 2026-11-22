@@ -96,8 +96,9 @@ private:
 };
 
 // DigiTech Drop-style transposer.  Time-domain like the Whammy but polyphonic:
-// the splice spacing is fixed instead of tracked, and the band is capped at
-// 10 kHz — the trade the pedal makes to stay quick, and why it sounds darker.
+// it tracks the lowest strong period so the splice lands a whole number of
+// periods away, which is what keeps low notes from beating, and it caps the
+// band at 10 kHz — the trade the pedal makes to stay quick.
 struct DropControls {
   float semitones = 0.0f;  // 0 = unison, 1 = one octave down
   float tone = 0.5f;
@@ -108,8 +109,12 @@ class Drop {
 public:
   void prepare(float sr) noexcept {
     sr_ = sr > 0.0f ? sr : 48000.0f;
-    shifter_.prepare(sr_, 34.0f, 4.0f, 4.0f);
+    shifter_.prepare(sr_, 45.0f, 3.0f, 4.0f);
     shifter_.setSpliceSamples(sr_ * 0.012f);
+    history_.assign(kWindow, 0.0f);
+    historyPos_ = 0;
+    hopCounter_ = 0;
+    period_ = 0.0f;
     lowL_.lowPass(10000.0f, 0.7f, sr_);
     lowR_.lowPass(10000.0f, 0.7f, sr_);
     reset();
@@ -125,6 +130,14 @@ public:
   inline void process(float& l, float& r, float mixOverride) noexcept {
     update();
     const float mix = mixOverride >= 0.0f ? mixOverride : mix_;
+
+    history_[static_cast<size_t>(historyPos_)] = 0.5f * (l + r);
+    historyPos_ = (historyPos_ + 1) % kWindow;
+    if (++hopCounter_ >= kHop) {
+      hopCounter_ = 0;
+      detectPeriod();
+    }
+
     const float dryL = shifter_.dryLeft();
     const float dryR = shifter_.dryRight();
     float wetL = lowL_.process(l);
@@ -134,6 +147,10 @@ public:
     r = dryR + (wetR - dryR) * mix;
   }
   void reset() noexcept {
+    std::fill(history_.begin(), history_.end(), 0.0f);
+    historyPos_ = 0;
+    hopCounter_ = 0;
+    period_ = 0.0f;
     shifter_.reset();
     lowL_.reset();
     lowR_.reset();
@@ -141,6 +158,76 @@ public:
   int latencySamples() const noexcept { return shifter_.latencySamples(); }
 
 private:
+  static constexpr int kWindow = 2048;
+  static constexpr int kHop = 512;
+
+  // Normalised autocorrelation over 60-500 Hz on a chronological copy of the
+  // ring (a linear pass would put the wrap in the middle of the window and
+  // break the long-lag match).
+  void detectPeriod() noexcept {
+    float window[kWindow];
+    for (int i = 0; i < kWindow; ++i) {
+      window[i] = history_[static_cast<size_t>((historyPos_ + i) % kWindow)];
+    }
+    const int minLag = std::max(16, static_cast<int>(sr_ / 500.0f));
+    const int maxLag = std::min(kWindow / 2, static_cast<int>(sr_ / 60.0f));
+    double energy = 0.0;
+    for (int i = 0; i < kWindow; ++i) {
+      energy += static_cast<double>(window[i]) * window[i];
+    }
+    if (energy < 1.0e-6) {
+      period_ = 0.0f;
+      return;
+    }
+    double best = 0.0;
+    int bestLag = 0;
+    for (int lag = minLag; lag <= maxLag; ++lag) {
+      double corr = 0.0, ea = 0.0, eb = 0.0;
+      for (int i = 0; i + lag < kWindow; ++i) {
+        const double a = window[i];
+        const double b = window[i + lag];
+        corr += a * b;
+        ea += a * a;
+        eb += b * b;
+      }
+      if (ea <= 1.0e-9 || eb <= 1.0e-9) continue;
+      const double norm = corr / std::sqrt(ea * eb);
+      if (norm > best) {
+        best = norm;
+        bestLag = lag;
+      }
+    }
+    if (best < 0.5 || bestLag <= 0) {
+      return;  // keep the last period rather than jumping around
+    }
+    // Prefer the fundamental: if twice the lag still correlates nearly as
+    // well, the true period is the longer one.
+    int chosen = bestLag;
+    for (int mult = 2; mult <= 3; ++mult) {
+      const int lag = bestLag * mult;
+      if (lag > maxLag) break;
+      double corr = 0.0, ea = 0.0, eb = 0.0;
+      for (int i = 0; i + lag < kWindow; ++i) {
+        const double a = window[i];
+        const double b = window[i + lag];
+        corr += a * b;
+        ea += a * a;
+        eb += b * b;
+      }
+      if (ea > 1.0e-9 && eb > 1.0e-9 &&
+          corr / std::sqrt(ea * eb) > 0.85 * best) {
+        chosen = lag;
+      }
+    }
+    period_ = period_ > 0.0f
+                  ? period_ + (static_cast<float>(chosen) - period_) * 0.5f
+                  : static_cast<float>(chosen);
+    // Two periods when the note is low enough: fewer splices, and the jump
+    // still fits the delay range.
+    const float splice = std::min(2.0f * period_, 0.55f * sr_ * 0.042f);
+    shifter_.setSpliceSamples(std::max(period_, splice));
+  }
+
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
@@ -151,9 +238,14 @@ private:
     shifter_.setRatio(std::pow(2.0f, semis / 12.0f), 0.03f);
     mix_ = pitchdetail::clamp01(c_.mix);
   }
+
   SolaShifter shifter_;
   hdsp::Biquad lowL_, lowR_;
   DropControls c_;
+  std::vector<float> history_;
+  int historyPos_ = 0;
+  int hopCounter_ = 0;
+  float period_ = 0.0f;
   float sr_ = 48000.0f;
   float mix_ = 1.0f;
   bool dirty_ = true;
