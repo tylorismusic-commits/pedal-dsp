@@ -246,10 +246,11 @@ private:
   float releaseCoeff_ = 0.01f;
 };
 
-// Envelope-controlled auto-wah with a wider, more vocal sweep than the
-// general-purpose Envelope Filter.  The filter opens on picking attack and
-// closes with the envelope release; Sensitivity sets how hard the input drives
-// that sweep.
+// Envelope-controlled auto-wah, Cry Baby voiced: a resonant low-pass peak
+// sweeping the midrange (about 380 Hz to 2.3 kHz) with a little band-pass on
+// top for the throaty quack.  The envelope drives the sweep in dB, so picking
+// harder opens it further instead of slamming it wide open on the first
+// transient.
 struct AutoWahControls {
   float sens = 0.55f;
   float q = 0.60f;
@@ -261,8 +262,8 @@ class AutoWah {
 public:
   void prepare(float sr) noexcept {
     sr_ = sr > 0.0f ? sr : 48000.0f;
-    attackCoeff_ = dyndetail::coeffForMs(8.0f, sr_);
-    releaseCoeff_ = dyndetail::coeffForMs(140.0f, sr_);
+    attackCoeff_ = dyndetail::coeffForMs(6.0f, sr_);
+    releaseCoeff_ = dyndetail::coeffForMs(95.0f, sr_);
     reset();
     dirty_ = true;
   }
@@ -272,27 +273,30 @@ public:
   }
   inline void process(float& l, float& r) noexcept {
     update();
-    const float detector =
-        std::max(std::fabs(l), std::fabs(r)) * sensGain_;
+    const float detector = std::max(std::fabs(l), std::fabs(r));
     const float envCoeff = detector > env_ ? attackCoeff_ : releaseCoeff_;
     env_ += (detector - env_) * envCoeff;
 
-    // Ignore tiny residual noise so the filter does not sit half-open.
-    const float drive = dyndetail::clamp01((env_ - 0.002f) * 1.35f);
-    const float octaves = rangeOct_ * drive;
-    const float hz = std::min(std::max(baseHz_ * std::exp2(octaves), 70.0f),
-                              sr_ * 0.42f);
+    // Sweep in dB: at the floor the pedal sits at the heel, a pick's worth of
+    // level above it reaches the toe.  Sensitivity moves the floor so soft
+    // playing still opens the filter.
+    const float db = 20.0f * std::log10(env_ + 1e-9f);
+    const float drive = dyndetail::clamp01((db - floorDb_) * (1.0f / 30.0f));
+    const float hz = std::min(
+        std::max(baseHz_ * std::exp2(rangeOct_ * drive), 90.0f),
+        sr_ * 0.42f);
     const float g = std::tan(kPi * hz / sr_);
     const float k = 1.0f / q_;
 
-    // A resonant low-pass is the classic auto-wah shape: it opens from a
-    // dark, vocal "ooh" to a bright "aah" as the envelope rises.  A band-pass
-    // removed both lows and highs and sounded static by comparison.
-    const float lpL = svf_[0].lowpass(l, g, k);
-    const float lpR = svf_[1].lowpass(r, g, k);
-    const float makeup = 0.75f + 1.1f / std::sqrt(q_);
-    const float wetL = lpL * makeup;
-    const float wetR = lpR * makeup;
+    float lpL = 0.0f, bpL = 0.0f, lpR = 0.0f, bpR = 0.0f;
+    svf_[0].process(l, g, k, &lpL, &bpL);
+    svf_[1].process(r, g, k, &lpR, &bpR);
+
+    // A resonant low-pass alone is the Cry Baby body; the band-pass adds the
+    // vocal edge on top.  The make-up keeps the sweep from jumping in level.
+    const float makeup = 0.9f / std::sqrt(q_);
+    const float wetL = (lpL * 0.88f + bpL * 0.34f) * makeup;
+    const float wetR = (lpR * 0.88f + bpR * 0.34f) * makeup;
     l += (wetL - l) * mix_;
     r += (wetR - r) * mix_;
   }
@@ -308,7 +312,8 @@ private:
   struct Svf {
     float ic1 = 0.0f, ic2 = 0.0f;
     void reset() noexcept { ic1 = ic2 = 0.0f; }
-    inline float lowpass(float x, float g, float k) noexcept {
+    inline void process(float x, float g, float k, float* lp,
+                        float* bp) noexcept {
       const float a1 = 1.0f / (1.0f + g * (g + k));
       const float a2 = g * a1;
       const float a3 = g * a2;
@@ -317,17 +322,18 @@ private:
       const float v2 = ic2 + a2 * ic1 + a3 * v3;
       ic1 = 2.0f * v1 - ic1;
       ic2 = 2.0f * v2 - ic2;
-      return v2;
+      *bp = v1;
+      *lp = v2;
     }
   };
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
-    sensGain_ = 2.5f + 44.0f * dyndetail::clamp01(c_.sens);
-    q_ = 0.75f * std::pow(14.0f, dyndetail::clamp01(c_.q));
-    rangeOct_ = 2.0f + 5.0f * dyndetail::clamp01(c_.range);
+    q_ = 3.0f + 6.0f * dyndetail::clamp01(c_.q);
+    rangeOct_ = 1.6f + 1.6f * dyndetail::clamp01(c_.range);
     mix_ = dyndetail::clamp01(c_.mix);
-    baseHz_ = 180.0f;
+    floorDb_ = -58.0f + 26.0f * dyndetail::clamp01(c_.sens);
+    baseHz_ = 380.0f;
   }
 
   float sr_ = 48000.0f;
@@ -335,11 +341,11 @@ private:
   AutoWahControls c_;
   Svf svf_[2];
   float env_ = 0.0f;
-  float sensGain_ = 10.0f;
-  float q_ = 5.0f;
-  float rangeOct_ = 4.0f;
+  float q_ = 6.0f;
+  float rangeOct_ = 2.6f;
   float mix_ = 0.85f;
-  float baseHz_ = 140.0f;
+  float floorDb_ = -44.0f;
+  float baseHz_ = 380.0f;
   float attackCoeff_ = 0.1f;
   float releaseCoeff_ = 0.01f;
 };
