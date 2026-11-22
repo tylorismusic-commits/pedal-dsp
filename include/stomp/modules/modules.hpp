@@ -6,6 +6,7 @@
 #include "drive808.hpp"
 #include "drive_pedals.hpp"
 #include "pitch.hpp"
+#include "whammy.hpp"
 #include "modulation.hpp"
 #include "delay_pedals.hpp"
 #include "octave.hpp"

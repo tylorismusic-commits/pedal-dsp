@@ -27,8 +27,8 @@
 namespace stomp::modules {
 
 namespace {
-constexpr int kBlock = 4096;    // analysis/synthesis window
-constexpr int kInterval = 512;  // hop, 8x overlap
+constexpr int kBlock = 4096;    // default analysis/synthesis window
+constexpr int kInterval = 512;  // default hop, 8x overlap
 } // namespace
 
 struct PitchEngine::Impl {
@@ -54,21 +54,26 @@ struct PitchEngine::Impl {
   float mixCurrent = 0.0f;
   float mixCoeff = 0.01f;
 
-  void rebuild(float sampleRate) {
+  int block = kBlock;
+  int interval = kInterval;
+
+  void rebuild(float sampleRate, int blockSamples, int hopSamples) {
     sr = sampleRate > 0.0f ? sampleRate : 48000.0f;
+    block = blockSamples > 0 ? blockSamples : kBlock;
+    interval = hopSamples > 0 ? hopSamples : kInterval;
     stretch = std::make_unique<signalsmith::stretch::SignalsmithStretch<float>>();
-    stretch->configure(2, kBlock, kInterval, false);
+    stretch->configure(2, block, interval, false);
     stretch->setTransposeFactor(ratio);
     stretch->setFormantFactor(1.0f, false);
     // The engine reports the window; the block pipeline adds one hop because a
     // frame is drained over the following interval.  Measured 4608 at 48 kHz.
     latency =
-        stretch->inputLatency() + stretch->outputLatency() + kInterval;
+        stretch->inputLatency() + stretch->outputLatency() + interval;
 
-    inL.assign(kInterval, 0.0f);
-    inR.assign(kInterval, 0.0f);
-    outL.assign(kInterval, 0.0f);
-    outR.assign(kInterval, 0.0f);
+    inL.assign(interval, 0.0f);
+    inR.assign(interval, 0.0f);
+    outL.assign(interval, 0.0f);
+    outR.assign(interval, 0.0f);
     inPtrs[0] = inL.data();
     inPtrs[1] = inR.data();
     outPtrs[0] = outL.data();
@@ -115,18 +120,18 @@ struct PitchEngine::Impl {
 
     inL[static_cast<size_t>(inPos)] = l;
     inR[static_cast<size_t>(inPos)] = r;
-    if (++inPos >= kInterval) {
+    if (++inPos >= interval) {
       inPos = 0;
       // Fixed window and hop: this only changes the phase advance, so a control
       // sweep cannot re-grid or click the output.
       stretch->setTransposeFactor(ratio);
-      stretch->process(inPtrs, kInterval, outPtrs, kInterval);
+      stretch->process(inPtrs, interval, outPtrs, interval);
       outPos = 0;
     }
 
     float wetL = outL[static_cast<size_t>(outPos)];
     float wetR = outR[static_cast<size_t>(outPos)];
-    if (++outPos >= kInterval) outPos = 0;
+    if (++outPos >= interval) outPos = 0;
 
     wetL = tone(wetL, toneStateL);
     wetR = tone(wetR, toneStateR);
@@ -147,8 +152,9 @@ struct PitchEngine::Impl {
 PitchEngine::PitchEngine() : impl_(std::make_unique<Impl>()) {}
 PitchEngine::~PitchEngine() = default;
 
-void PitchEngine::prepare(float sr, bool /*preserveFormants*/) noexcept {
-  impl_->rebuild(sr);
+void PitchEngine::prepare(float sr, bool /*preserveFormants*/, int block,
+                         int interval) noexcept {
+  impl_->rebuild(sr, block, interval);
   impl_->ratio = impl_->target;
   impl_->glideCoeff = 1.0f;
 }

@@ -6,6 +6,8 @@
 #include <cmath>
 #include <memory>
 
+#include <hdsp/biquad.hpp>
+
 namespace stomp::modules {
 
 namespace pitchdetail {
@@ -22,7 +24,9 @@ public:
   PitchEngine(const PitchEngine&) = delete;
   PitchEngine& operator=(const PitchEngine&) = delete;
 
-  void prepare(float sr, bool preserveFormants = true) noexcept;
+  // block/interval select the analysis window; 0 keeps the 4096/512 default.
+  void prepare(float sr, bool preserveFormants = true, int block = 0,
+               int interval = 0) noexcept;
   void setRatio(float ratio, float glideSeconds) noexcept;
   void setTone(float tone) noexcept;
   void setLowCut(float lowCut) noexcept;
@@ -86,6 +90,62 @@ private:
   }
   PitchEngine engine_;
   PitchDropControls c_;
+  bool dirty_ = true;
+};
+
+// DigiTech Drop-style transposer: polyphonic, one octave down, with the band
+// capped at 10 kHz and a 2048-sample analysis window.  That is the trade the
+// pedal makes — it gives up the top octave and some chord clarity to stay
+// quick, which is why it sounds darker than the clean engine.
+struct DropControls {
+  float semitones = 0.0f;  // 0 = unison, 1 = one octave down
+  float tone = 0.5f;
+  float mix = 1.0f;
+};
+
+class Drop {
+public:
+  void prepare(float sr) noexcept {
+    sr_ = sr > 0.0f ? sr : 48000.0f;
+    engine_.prepare(sr_, false, 2048, 256);
+    engine_.clearLowCut();
+    engine_.setTone(0.5f);
+    lowL_.lowPass(10000.0f, 0.7f, sr_);
+    lowR_.lowPass(10000.0f, 0.7f, sr_);
+    reset();
+    dirty_ = true;
+  }
+  void setControls(const DropControls& c) noexcept {
+    c_ = c;
+    dirty_ = true;
+  }
+  inline void process(float& l, float& r) noexcept {
+    update();
+    l = lowL_.process(l);
+    r = lowR_.process(r);
+    engine_.process(l, r, mix_);
+  }
+  void reset() noexcept {
+    engine_.reset();
+    lowL_.reset();
+    lowR_.reset();
+  }
+  int latencySamples() const noexcept { return engine_.latencySamples(); }
+
+private:
+  void update() noexcept {
+    if (!dirty_) return;
+    dirty_ = false;
+    const float semis = -12.0f * pitchdetail::clamp01(c_.semitones);
+    engine_.setRatio(std::pow(2.0f, semis / 12.0f), 0.02f);
+    engine_.setTone(c_.tone);
+    mix_ = pitchdetail::clamp01(c_.mix);
+  }
+  PitchEngine engine_;
+  hdsp::Biquad lowL_, lowR_;
+  DropControls c_;
+  float sr_ = 48000.0f;
+  float mix_ = 1.0f;
   bool dirty_ = true;
 };
 
