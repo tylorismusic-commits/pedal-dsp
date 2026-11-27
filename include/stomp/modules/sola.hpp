@@ -46,6 +46,12 @@ public:
     splice_ = std::max(16.0f, samples);
   }
 
+  // When the caller knows the input period, the jump is quantised to a whole
+  // number of periods so the splice is phase aligned by construction.
+  void setPeriodSamples(float samples) noexcept {
+    period_ = samples > 0.0f ? samples : 0.0f;
+  }
+
   void reset() noexcept {
     std::fill(bufL_.begin(), bufL_.end(), 0.0f);
     std::fill(bufR_.begin(), bufR_.end(), 0.0f);
@@ -169,7 +175,16 @@ private:
         }
       }
     }
-    if (bestScore < -1.0) return;  // nothing usable yet: keep playing
+    if (period_ >= 16.0f) {
+      // Use exactly one or more whole periods: a correlation maximum can sit a
+      // few samples off on a real string, and even a couple of samples per
+      // splice is enough to make low notes beat.
+      const int p = static_cast<int>(std::lround(period_));
+      const int mult = std::max(1, static_cast<int>(std::lround(splice_ / static_cast<float>(p))));
+      bestOffset = std::max(16, mult * p);
+    } else if (bestScore < -1.0) {
+      return;  // nothing usable yet: keep playing
+    }
 
     oldRead_ = read_;
     read_ = tooClose ? read_ - bestOffset : read_ + bestOffset;
@@ -191,6 +206,7 @@ private:
   float target_ = 1.0f;
   float glideCoeff_ = 1.0f;
   float splice_ = 576.0f;
+  float period_ = 0.0f;
   std::vector<float> bufL_, bufR_;
 };
 

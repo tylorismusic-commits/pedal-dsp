@@ -57,6 +57,12 @@ public:
     c_ = c;
     dirty_ = true;
   }
+  // Bypassed: run at unison (same latency) and restore the knobs on engage.
+  void setBypassed(bool bypassed) noexcept {
+    if (bypassed_ == bypassed) return;
+    bypassed_ = bypassed;
+    dirty_ = true;
+  }
   // mixOverride >= 0 forces the dry/wet balance, which is how a bypassed slot
   // keeps its latency while passing the signal through unchanged.
   inline void process(float& l, float& r) noexcept { process(l, r, -1.0f); }
@@ -68,7 +74,10 @@ public:
     if (++hopCounter_ >= kHop) {
       hopCounter_ = 0;
       detectPeriod();
-      if (period_ > 0.0f) shifter_.setSpliceSamples(period_);
+      if (period_ > 0.0f) {
+        shifter_.setSpliceSamples(period_);
+        shifter_.setPeriodSamples(period_);
+      }
     }
 
     const float dryL = shifter_.dryLeft();
@@ -164,10 +173,12 @@ private:
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
-    const float octaves = (whammydetail::clamp01(c_.pitch) - 0.5f) * 4.0f;
+    const float octaves = bypassed_
+                              ? 0.0f
+                              : (whammydetail::clamp01(c_.pitch) - 0.5f) * 4.0f;
     const float glideMs = 5.0f + 295.0f * whammydetail::clamp01(c_.glide);
     shifter_.setRatio(std::pow(2.0f, octaves), 0.001f * glideMs);
-    mix_ = whammydetail::clamp01(c_.mix);
+    mix_ = bypassed_ ? 1.0f : whammydetail::clamp01(c_.mix);
     const float hz = 400.0f * std::pow(24.0f, whammydetail::clamp01(c_.tone));
     toneL_.lowPass(hz, 0.72f, sr_);
     toneR_.lowPass(hz, 0.72f, sr_);
@@ -176,6 +187,7 @@ private:
   float sr_ = 48000.0f;
   bool dirty_ = true;
   float mix_ = 1.0f;
+  bool bypassed_ = false;
   float period_ = 0.0f;
   WhammyControls c_;
   SolaShifter shifter_;
