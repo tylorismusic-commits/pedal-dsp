@@ -19,6 +19,7 @@
 
 #include <hdsp/biquad.hpp>
 
+#include "pitch_tracker.hpp"
 #include "sola.hpp"
 
 namespace stomp::modules {
@@ -44,10 +45,7 @@ public:
     sr_ = sr > 0.0f ? sr : 48000.0f;
     shifter_.prepare(sr_, 34.0f, 4.0f, 4.0f);
     shifter_.setSpliceSamples(sr_ * 0.008f);
-    history_.assign(kWindow, 0.0f);
-    historyPos_ = 0;
-    hopCounter_ = 0;
-    period_ = 0.0f;
+    tracker_.prepare(sr_, 40.0f, 500.0f);
     toneL_.lowPass(6000.0f, 0.72f, sr_);
     toneR_.lowPass(6000.0f, 0.72f, sr_);
     reset();
@@ -68,17 +66,8 @@ public:
   inline void process(float& l, float& r) noexcept { process(l, r, -1.0f); }
   inline void process(float& l, float& r, float mixOverride) noexcept {
     update();
-    const float in = 0.5f * (l + r);
-    history_[static_cast<size_t>(historyPos_)] = in;
-    historyPos_ = (historyPos_ + 1) % kWindow;
-    if (++hopCounter_ >= kHop) {
-      hopCounter_ = 0;
-      detectPeriod();
-      if (period_ > 0.0f) {
-        shifter_.setSpliceSamples(period_);
-        shifter_.setPeriodSamples(period_);
-      }
-    }
+    tracker_.process(0.5f * (l + r));
+    updatePeriod();
 
     const float dryL = shifter_.dryLeft();
     const float dryR = shifter_.dryRight();
@@ -92,10 +81,7 @@ public:
     r = dryR + (wetR - dryR) * mix;
   }
   void reset() noexcept {
-    std::fill(history_.begin(), history_.end(), 0.0f);
-    historyPos_ = 0;
-    hopCounter_ = 0;
-    period_ = 0.0f;
+    tracker_.reset();
     shifter_.reset();
     toneL_.reset();
     toneR_.reset();
@@ -103,71 +89,12 @@ public:
   int latencySamples() const noexcept { return shifter_.latencySamples(); }
 
 private:
-  static constexpr int kWindow = 1024;
-  static constexpr int kHop = 256;
-
-  // Normalised autocorrelation over 70-500 Hz.  Both energies come from the
-  // overlapped range: normalising against the whole window penalises long lags
-  // and makes the tracker lock an octave high, which then puts the splices
-  // half a period apart.
-  void detectPeriod() noexcept {
-    constexpr int n = kWindow;
-    // Copy out in chronological order: correlating the ring buffer linearly
-    // puts the wrap in the middle of the window, which breaks the match at
-    // long lags and made the tracker jump between the period and its half.
-    float window[kWindow];
-    for (int i = 0; i < n; ++i) {
-      window[i] = history_[static_cast<size_t>((historyPos_ + i) % n)];
-    }
-    double energy = 0.0;
-    for (int i = 0; i < n; ++i) {
-      energy += static_cast<double>(window[i]) * window[i];
-    }
-    if (energy < 1.0e-6) {
-      period_ = 0.0f;
-      return;
-    }
-    double best = 0.0;
-    int bestLag = 0;
-    for (int lag = 96; lag <= 686; ++lag) {
-      double corr = 0.0, ea = 0.0, eb = 0.0;
-      for (int i = 0; i + lag < n; ++i) {
-        const double a = window[i];
-        const double b = window[i + lag];
-        corr += a * b;
-        ea += a * a;
-        eb += b * b;
-      }
-      if (ea <= 1.0e-9 || eb <= 1.0e-9) continue;
-      const double norm = corr / std::sqrt(ea * eb);
-      if (norm > best) {
-        best = norm;
-        bestLag = lag;
-      }
-    }
-    if (best > 0.55 && bestLag > 0) {
-      int chosen = bestLag;
-      for (int mult = 2; mult <= 3; ++mult) {
-        const int lag = bestLag * mult;
-        if (lag > 686) break;
-        double corr = 0.0, ea = 0.0, eb = 0.0;
-        for (int i = 0; i + lag < n; ++i) {
-          const double a = window[i];
-          const double b = window[i + lag];
-          corr += a * b;
-          ea += a * a;
-          eb += b * b;
-        }
-        if (ea > 1.0e-9 && eb > 1.0e-9 && corr / std::sqrt(ea * eb) > 0.85 * best) {
-          chosen = lag;
-        }
-      }
-      const float p = static_cast<float>(chosen);
-      period_ = period_ > 0.0f ? period_ + (p - period_) * 0.5f : p;
-
-    } else {
-      period_ = 0.0f;
-    }
+  // The period comes from the shared YIN tracker; see pitch_tracker.hpp.
+  void updatePeriod() noexcept {
+    if (!tracker_.valid()) return;
+    const float period = tracker_.periodSamples();
+    shifter_.setSpliceSamples(period);
+    shifter_.setPeriodSamples(period);
   }
 
   void update() noexcept {
@@ -188,12 +115,9 @@ private:
   bool dirty_ = true;
   float mix_ = 1.0f;
   bool bypassed_ = false;
-  float period_ = 0.0f;
   WhammyControls c_;
   SolaShifter shifter_;
-  std::vector<float> history_;
-  int historyPos_ = 0;
-  int hopCounter_ = 0;
+  PitchTracker tracker_;
   hdsp::Biquad toneL_, toneR_;
 };
 

@@ -8,6 +8,7 @@
 
 #include <hdsp/biquad.hpp>
 
+#include "pitch_tracker.hpp"
 #include "sola.hpp"
 
 namespace stomp::modules {
@@ -111,13 +112,7 @@ public:
     sr_ = sr > 0.0f ? sr : 48000.0f;
     shifter_.prepare(sr_, 45.0f, 3.0f, 4.0f);
     shifter_.setSpliceSamples(sr_ * 0.012f);
-    decim_ = std::max(1, static_cast<int>(std::lround(sr_ / 12000.0f)));
-    analysisRate_ = sr_ / static_cast<float>(decim_);
-    history_.assign(kWindow, 0.0f);
-    historyPos_ = 0;
-    hopCounter_ = 0;
-    decimCounter_ = 0;
-    period_ = 0.0f;
+    tracker_.prepare(sr_, 40.0f, 500.0f);
     lowL_.lowPass(10000.0f, 0.7f, sr_);
     lowR_.lowPass(10000.0f, 0.7f, sr_);
     reset();
@@ -142,17 +137,16 @@ public:
     update();
     const float mix = mixOverride >= 0.0f ? mixOverride : mix_;
 
-    if (++decimCounter_ >= decim_) {
-      decimCounter_ = 0;
-      history_[static_cast<size_t>(historyPos_)] = 0.5f * (l + r);
-      historyPos_ = (historyPos_ + 1) % kWindow;
-      if (++hopCounter_ >= kHop) {
-        hopCounter_ = 0;
-        detectPeriod();
-      }
+    tracker_.process(0.5f * (l + r));
+    if (tracker_.valid()) {
+      const float period = tracker_.periodSamples();
+      shifter_.setPeriodSamples(period);
+      // Two periods per splice: fewer joins, and the jump still fits the
+      // 45 ms delay range.
+      shifter_.setSpliceSamples(2.0f * period);
     }
 
-    const float dryL = shifter_.dryLeft();  // delayed to the middle of the range
+    const float dryL = shifter_.dryLeft();
     const float dryR = shifter_.dryRight();
     float wetL = lowL_.process(l);
     float wetR = lowR_.process(r);
@@ -161,10 +155,7 @@ public:
     r = dryR + (wetR - dryR) * mix;
   }
   void reset() noexcept {
-    std::fill(history_.begin(), history_.end(), 0.0f);
-    historyPos_ = 0;
-    hopCounter_ = 0;
-    period_ = 0.0f;
+    tracker_.reset();
     shifter_.reset();
     lowL_.reset();
     lowR_.reset();
@@ -172,88 +163,6 @@ public:
   int latencySamples() const noexcept { return shifter_.latencySamples(); }
 
 private:
-  static constexpr int kWindow = 1024;  // decimated analysis window
-  static constexpr int kHop = 256;
-
-  // YIN (cumulative mean normalised difference) on a ~12 kHz decimated copy.
-  // Plain autocorrelation locks onto a harmonic when the fundamental is weak,
-  // which for a low guitar note means splicing half a period apart and
-  // cancelling the fundamental.  YIN's CMND curve avoids that.
-  void detectPeriod() noexcept {
-    float w[kWindow];
-    for (int i = 0; i < kWindow; ++i) {
-      w[i] = history_[static_cast<size_t>((historyPos_ + i) % kWindow)];
-    }
-    const int minLag = std::max(2, static_cast<int>(analysisRate_ / 420.0f));
-    const int maxLag = std::min(kWindow / 2, static_cast<int>(analysisRate_ / 40.0f));
-    if (maxLag <= minLag + 2) return;
-
-    scratch_.assign(static_cast<size_t>(maxLag + 1), 0.0f);
-    double energy = 0.0;
-    for (int i = 0; i < kWindow; ++i) energy += static_cast<double>(w[i]) * w[i];
-    if (energy < 1.0e-6) return;
-
-    for (int lag = 1; lag <= maxLag; ++lag) {
-      double diff = 0.0;
-      for (int i = 0; i + lag < kWindow; ++i) {
-        const double d = static_cast<double>(w[i]) - w[i + lag];
-        diff += d * d;
-      }
-      scratch_[static_cast<size_t>(lag)] = static_cast<float>(diff);
-    }
-
-    double running = 0.0;
-    scratch_[0] = 1.0f;
-    for (int lag = 1; lag <= maxLag; ++lag) {
-      running += scratch_[static_cast<size_t>(lag)];
-      scratch_[static_cast<size_t>(lag)] =
-          static_cast<float>(running > 0.0
-                                 ? scratch_[static_cast<size_t>(lag)] * lag / running
-                                 : 1.0);
-    }
-
-    int chosen = 0;
-    for (int lag = minLag; lag < maxLag; ++lag) {
-      const float v = scratch_[static_cast<size_t>(lag)];
-      if (v < 0.18f && v <= scratch_[static_cast<size_t>(lag - 1)] &&
-          v <= scratch_[static_cast<size_t>(lag + 1)]) {
-        chosen = lag;
-        break;
-      }
-    }
-    if (!chosen) {
-      int best = minLag;
-      for (int lag = minLag; lag <= maxLag; ++lag) {
-        if (scratch_[static_cast<size_t>(lag)] <
-            scratch_[static_cast<size_t>(best)]) {
-          best = lag;
-        }
-      }
-      if (scratch_[static_cast<size_t>(best)] < 0.35f) chosen = best;
-    }
-    if (!chosen) return;  // keep the last period
-
-    // Parabolic refinement around the dip.
-    float refined = static_cast<float>(chosen);
-    if (chosen > 1 && chosen < maxLag) {
-      const float a = scratch_[static_cast<size_t>(chosen - 1)];
-      const float b = scratch_[static_cast<size_t>(chosen)];
-      const float c = scratch_[static_cast<size_t>(chosen + 1)];
-      const float denom = a - 2.0f * b + c;
-      if (std::fabs(denom) > 1.0e-9f) {
-        const float delta = 0.5f * (a - c) / denom;
-        refined += std::max(-0.5f, std::min(0.5f, delta));
-      }
-    }
-
-    const float period = refined * static_cast<float>(decim_);
-    period_ = period_ > 0.0f ? period_ + (period - period_) * 0.5f : period;
-    shifter_.setPeriodSamples(period_);
-    // Two periods for the splice: fewer joins, and the jump still fits the
-    // delay range.
-    shifter_.setSpliceSamples(2.0f * period_);
-  }
-
   void update() noexcept {
     if (!dirty_) return;
     dirty_ = false;
@@ -267,16 +176,9 @@ private:
   }
 
   SolaShifter shifter_;
+  PitchTracker tracker_;
   hdsp::Biquad lowL_, lowR_;
   DropControls c_;
-  std::vector<float> history_;
-  std::vector<float> scratch_;
-  int historyPos_ = 0;
-  int hopCounter_ = 0;
-  int decim_ = 4;
-  int decimCounter_ = 0;
-  float analysisRate_ = 12000.0f;
-  float period_ = 0.0f;
   float sr_ = 48000.0f;
   float mix_ = 1.0f;
   bool bypassed_ = false;
