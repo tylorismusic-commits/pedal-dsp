@@ -43,7 +43,9 @@ class Whammy {
 public:
   void prepare(float sr) noexcept {
     sr_ = sr > 0.0f ? sr : 48000.0f;
-    shifter_.prepare(sr_, 34.0f, 4.0f, 4.0f);
+    // 45 ms, like the Drop: a whole period of a low B has to fit in the
+    // window or the splice cannot be phase aligned at all.
+    shifter_.prepare(sr_, 45.0f, 3.0f, 4.0f);
     shifter_.setSpliceSamples(sr_ * 0.008f);
     tracker_.prepare(sr_, 40.0f, 500.0f);
     toneL_.lowPass(6000.0f, 0.72f, sr_);

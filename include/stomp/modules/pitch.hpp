@@ -110,7 +110,7 @@ class Drop {
 public:
   void prepare(float sr) noexcept {
     sr_ = sr > 0.0f ? sr : 48000.0f;
-    shifter_.prepare(sr_, 45.0f, 3.0f, 4.0f);
+    shifter_.prepare(sr_, 45.0f, 3.0f, 6.0f);
     shifter_.setSpliceSamples(sr_ * 0.012f);
     tracker_.prepare(sr_, 40.0f, 500.0f);
     lowL_.lowPass(10000.0f, 0.7f, sr_);
@@ -141,8 +141,8 @@ public:
     if (tracker_.valid()) {
       const float period = tracker_.periodSamples();
       shifter_.setPeriodSamples(period);
-      // Two periods per splice: fewer joins, and the jump still fits the
-      // 45 ms delay range.
+      // Fallback centre only; splice() chooses one or two whole periods and
+      // then refines the jump by correlation.
       shifter_.setSpliceSamples(2.0f * period);
     }
 
@@ -161,6 +161,12 @@ public:
     lowR_.reset();
   }
   int latencySamples() const noexcept { return shifter_.latencySamples(); }
+#ifdef STOMP_SOLA_DEBUG
+  unsigned splices() const noexcept { return shifter_.splices(); }
+  double lastJump() const noexcept { return shifter_.lastJump(); }
+  double readPosition() const noexcept { return shifter_.readPosition(); }
+  float fadeGain() const noexcept { return shifter_.fadeGain(); }
+#endif
 
 private:
   void update() noexcept {

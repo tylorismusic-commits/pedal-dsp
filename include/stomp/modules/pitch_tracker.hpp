@@ -26,6 +26,7 @@ public:
     ring_.assign(kWindow, 0.0f);
     scratch_.assign(static_cast<size_t>(kWindow / 2 + 2), 0.0f);
     write_ = 0;
+    filled_ = 0;
     hopCounter_ = 0;
     decimCounter_ = 0;
     period_ = 0.0f;
@@ -37,6 +38,7 @@ public:
   void reset() noexcept {
     std::fill(ring_.begin(), ring_.end(), 0.0f);
     write_ = 0;
+    filled_ = 0;
     hopCounter_ = 0;
     decimCounter_ = 0;
     period_ = 0.0f;
@@ -49,6 +51,11 @@ public:
     decimCounter_ = 0;
     ring_[static_cast<size_t>(write_)] = mono;
     write_ = (write_ + 1) % kWindow;
+    filled_ = std::min(filled_ + 1, kWindow);
+    // Analysing a half-filled ring means correlating against zeros, which
+    // gives a confident-looking but meaningless period and a bad first
+    // splice.  Wait until the window is full.
+    if (filled_ < kWindow) return;
     if (++hopCounter_ >= kHop) {
       hopCounter_ = 0;
       analyze();
@@ -147,6 +154,7 @@ private:
   float maxHz_ = 500.0f;
   int decim_ = 4;
   int write_ = 0;
+  int filled_ = 0;
   int hopCounter_ = 0;
   int decimCounter_ = 0;
   float period_ = 0.0f;
